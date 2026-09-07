@@ -862,6 +862,7 @@
       #cs-card .cs-ask-input { flex: 1; border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font: inherit; }
       #cs-card .cs-ask-input:disabled { background: #f6f8fa; }
       #cs-card .cs-ask-btn { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+      #cs-card .cs-copy, #cs-card .cs-regen, #cs-card .cs-ask-btn { font: inherit; color: #1f2328; }
       #cs-card .cs-followup { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #d0d7de; font-size: 13px; line-height: 1.5; }
       #cs-card .cs-followup.error { color: #dc2626; }
       /* Markdown rendering */

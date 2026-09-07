@@ -1,0 +1,17 @@
+# build / generated output
+derivedData/
+Comment Summarizer/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+# OS clutter
+.DS_Store
+
+# secrets — never commit API keys
+.env
+.env.*
+*.local
+
+# local work-state memo (not part of the deliverable)
+PROGRESS.md

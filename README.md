@@ -153,6 +153,21 @@ above is enough.
 > the model. Use the card's **Regenerate** button (or reload the page) to force a
 > fresh summary.
 
+### Update checking
+
+The extension can't install updates by itself (it isn't distributed through a
+store with auto-update — Safari builds come from Xcode, Firefox from a
+file/temp load). Instead, each time you open the popup it quietly checks GitHub
+for the newest published **Release** of this project and, if a newer version
+exists, shows an **"Update available"** banner with a **View release** button
+that opens the release page in a new tab (the footer also shows your installed
+version and a **Check for updates** link to force a re-check). Dismiss it with
+**×** and it won't nag about that same version again.
+
+For this to work, each new version must be published as a GitHub Release with a
+version tag (e.g. `v1.0.0`); pre-releases and drafts are ignored. Checks are
+rate-limited to at most one GitHub API call every 6 hours per machine.
+
 ### Settings (in the popup)
 
 - **Provider** — `Ollama (local)`, `OpenRouter (online)`, or `Ninfer (local,
@@ -209,9 +224,10 @@ extension/
   extension's origin (set `OLLAMA_ORIGINS=*` for Ollama).
 - **Host permission:** the extension requests access to the enabled sites
   (reddit.com, youtube.com), `http://*/*` (any local HTTP provider — Ollama or
-  ninfer, on any host/port), `https://openrouter.ai/*`, and
+  ninfer, on any host/port), `https://openrouter.ai/*`,
   `https://www.googleapis.com/*` (the YouTube Data API, fetched from the
-  background so it's CORS-safe). It does not use `<all_urls>` or any port-bearing
+  background so it's CORS-safe), and `https://api.github.com/*` (update
+  checks). It does not use `<all_urls>` or any port-bearing
   pattern (WebExtension match patterns don't support ports).
 - **Model quality:** small models produce rougher summaries; larger is better
   but slower.

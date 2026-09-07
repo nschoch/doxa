@@ -62,11 +62,23 @@ api.runtime.onConnect.addListener((port) => {
   });
 });
 
-// The popup asks for the list of available models from the active provider.
+// The popup asks for the list of available models from the active provider, or
+// asks whether a new version has been published on GitHub.
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === "list-models") {
     listModels(message)
       .then((models) => sendResponse({ ok: true, models }))
+      .catch((err) =>
+        sendResponse({
+          ok: false,
+          error: err && err.message ? err.message : String(err),
+        }),
+      );
+    return true; // async response
+  }
+  if (message && message.type === "check-update") {
+    checkForUpdate(Boolean(message.force))
+      .then((res) => sendResponse(res))
       .catch((err) =>
         sendResponse({
           ok: false,
@@ -316,4 +328,120 @@ async function callOpenAICompatible(
     "";
   if (!text) throw new Error("The API returned an empty response.");
   return text;
+}
+
+// --- Update checking (GitHub Releases) ---
+// Doxa isn't distributed through an auto-updating store, so it can't install
+// updates itself. Instead it checks GitHub for the newest published release
+// and reports it to the popup, which shows an "Update available" banner with a
+// link to the release page (the user downloads/rebuilds from there). Results
+// are cached in storage so we don't hammer the GitHub API (unauthenticated
+// limit is 60 requests/hour per IP).
+
+const GITHUB_REPO = "nschoch/doxa";
+const GITHUB_API_LATEST = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const UPDATE_CACHE_KEY = "updateCheck";
+const UPDATE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // re-check at most every 6h
+const UPDATE_FETCH_TIMEOUT_S = 20;
+
+// "v0.5.0", "0.4.0-beta1", … → [0, 5, 0]. Returns null when not a version.
+function parseVersion(v) {
+  const m = String(v || "")
+    .trim()
+    .replace(/^v/i, "")
+    .match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$/);
+  if (!m) return null;
+  return [Number(m[1]) || 0, Number(m[2]) || 0, Number(m[3]) || 0];
+}
+
+// Returns > 0 when a is newer than b (numeric compare; -beta/+build suffixes
+// are ignored — GitHub's "latest" endpoint excludes pre-releases anyway).
+function cmpVersions(a, b) {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  if (!pa || !pb) return String(a || "").localeCompare(String(b || ""));
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+// Resolves to { ok, current, available, latest, message, checkedAt }.
+// - force=false: reuse a cached answer younger than the TTL, else fetch.
+// - force=true:  always hit the GitHub API.
+// A fresh fetch result (and only that) is written to the storage cache, so a
+// failed/offline check isn't cached and will retry on the next popup open.
+async function checkForUpdate(force) {
+  const current =
+    (api.runtime.getManifest() && api.runtime.getManifest().version) || "0.0.0";
+  try {
+    const stored = await api.storage.local.get(UPDATE_CACHE_KEY);
+    const cache = stored[UPDATE_CACHE_KEY] || null;
+    if (
+      !force &&
+      cache &&
+      cache.checkedAt &&
+      Date.now() - cache.checkedAt < UPDATE_CACHE_TTL_MS
+    ) {
+      return {
+        ok: true,
+        cached: true,
+        current,
+        available: !!cache.available,
+        latest: cache.latest || null,
+        message: cache.message || null,
+        checkedAt: cache.checkedAt,
+      };
+    }
+
+    let res;
+    try {
+      res = await fetchWithTimeout(
+        GITHUB_API_LATEST,
+        { headers: { Accept: "application/vnd.github+json" } },
+        UPDATE_FETCH_TIMEOUT_S,
+      );
+    } catch (err) {
+      throw new Error(`Could not reach GitHub (${err.message}).`);
+    }
+    const data = await res.json().catch(() => ({}));
+
+    const record = { checkedAt: Date.now() };
+    if (res.status === 404) {
+      // Repo exists but has never published a release.
+      record.available = false;
+      record.latest = null;
+      record.message = "No releases published on GitHub yet.";
+    } else if (!res.ok) {
+      record.available = false;
+      record.latest = null;
+      record.message = `GitHub check failed (HTTP ${res.status}${
+        data && data.message ? ": " + data.message : ""
+      }).`;
+    } else {
+      const tag = String((data && (data.tag_name || data.name)) || "").trim();
+      const latest = {
+        version: tag.replace(/^v/i, ""),
+        tag,
+        name: (data && data.name) || tag,
+        url: (data && data.html_url) || `https://github.com/${GITHUB_REPO}/releases`,
+      };
+      record.available = !!latest.version && cmpVersions(latest.version, current) > 0;
+      record.latest = latest;
+      record.message = null;
+    }
+    await api.storage.local.set({ [UPDATE_CACHE_KEY]: record });
+
+    return {
+      ok: true,
+      cached: false,
+      current,
+      available: !!record.available,
+      latest: record.latest || null,
+      message: record.message || null,
+      checkedAt: record.checkedAt,
+    };
+  } catch (err) {
+    return { ok: false, current, error: (err && err.message) || String(err) };
+  }
 }

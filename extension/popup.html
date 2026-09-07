@@ -13,6 +13,17 @@
     </header>
 
     <main>
+      <div id="updateBanner" class="update hidden">
+        <div class="update-text">
+          <strong>Update available</strong>
+          <span id="updateDetail"></span>
+        </div>
+        <div class="update-actions">
+          <button id="viewReleaseBtn" class="update-cta">View release</button>
+          <button id="dismissUpdateBtn" class="update-dismiss" title="Dismiss for this version">×</button>
+        </div>
+      </div>
+
       <button id="summarizeBtn" class="primary">Summarize comments</button>
       <button id="geminiBtn" class="ghost wide hidden">Summarize YouTube video with Gemini (open in new tab)</button>
       <p class="hint">The result appears as a card on the page, so you can keep browsing.</p>
@@ -105,7 +116,9 @@
     </details>
 
     <footer>
+      <span id="versionLabel" class="version"></span>
       <a href="#" id="helpLink">Setup help</a>
+      <a href="#" id="checkUpdatesLink">Check for updates</a>
     </footer>
 
     <script src="popup.js"></script>

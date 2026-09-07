@@ -30,6 +30,12 @@ const els = {
   autoSave: $("#autoSave"),
   saveBtn: $("#saveBtn"),
   helpLink: $("#helpLink"),
+  updateBanner: $("#updateBanner"),
+  updateDetail: $("#updateDetail"),
+  viewReleaseBtn: $("#viewReleaseBtn"),
+  dismissUpdateBtn: $("#dismissUpdateBtn"),
+  versionLabel: $("#versionLabel"),
+  checkUpdatesLink: $("#checkUpdatesLink"),
 };
 
 const DEFAULTS = {
@@ -43,12 +49,22 @@ const DEFAULTS = {
   maxComments: 300,
 };
 
+const RELEASES_PAGE = "https://github.com/nschoch/doxa/releases";
+// Latest version we've shown the banner for (null until one is known).
+let lastKnownUpdateVersion = null;
+let lastKnownUpdateUrl = RELEASES_PAGE;
+
 init();
 
 async function init() {
   bind();
   await loadSettings();
   refreshButtonState();
+  const manifest = browser.runtime.getManifest();
+  els.versionLabel.textContent = `Doxa v${(manifest && manifest.version) || "?"}`;
+  // Non-blocking: fetch/check in the background and show a banner if a newer
+  // release exists. The popup stays fully usable while this runs.
+  checkForUpdate(false);
 }
 
 function bind() {
@@ -56,6 +72,12 @@ function bind() {
   els.geminiBtn.addEventListener("click", doGemini);
   els.saveBtn.addEventListener("click", saveSettings);
   els.fetchModelsBtn.addEventListener("click", fetchModels);
+  els.viewReleaseBtn.addEventListener("click", openUpdateUrl);
+  els.dismissUpdateBtn.addEventListener("click", dismissUpdate);
+  els.checkUpdatesLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    manualUpdateCheck();
+  });
   els.modelsList.addEventListener("change", () => {
     activeModelInput().value = els.modelsList.value;
     if (els.autoSave.checked) saveSettings();
@@ -275,6 +297,76 @@ async function fetchModels() {
     "info",
     `${models.length} model(s) loaded — pick one to fill the model field.`,
   );
+}
+
+// --- Updates ---
+
+// Asks the background to compare the installed version against the newest
+// GitHub release (force=false reuses a cached answer, force=true always
+// re-checks). Shows the banner when a newer release exists; on a manual check
+// it also reports "up to date" / errors in the status area.
+async function checkForUpdate(force) {
+  let resp;
+  try {
+    resp = await browser.runtime.sendMessage({ type: "check-update", force: !!force });
+  } catch (e) {
+    if (force) setStatus("err", "Could not check for updates: " + ((e && e.message) || e));
+    return;
+  }
+  if (!resp || !resp.ok) {
+    if (force) {
+      setStatus(
+        "err",
+        "Could not check for updates: " + ((resp && resp.error) || "unknown error"),
+      );
+    }
+    return;
+  }
+  if (!resp.available || !resp.latest) {
+    if (force) setStatus("info", resp.message || `You're up to date — version ${resp.current}.`);
+    return;
+  }
+
+  // A manual "Check for updates" overrides a previous dismissal; the
+  // auto-check on popup open respects it (so we don't nag per open).
+  if (!force) {
+    let dismissed = null;
+    try {
+      const s = await browser.storage.local.get("updateDismissed");
+      dismissed = s && s.updateDismissed;
+    } catch (_) {
+      /* storage unavailable */
+    }
+    if (dismissed === resp.latest.version) return;
+  }
+
+  lastKnownUpdateVersion = resp.latest.version;
+  lastKnownUpdateUrl = resp.latest.url || RELEASES_PAGE;
+  els.updateDetail.textContent = `New version ${resp.latest.version} — you're on ${resp.current}.`;
+  els.updateBanner.classList.remove("hidden");
+  if (force) els.status.classList.add("hidden");
+}
+
+async function manualUpdateCheck() {
+  setStatus("info", "Checking GitHub for updates…");
+  await checkForUpdate(true);
+}
+
+function openUpdateUrl() {
+  if (lastKnownUpdateUrl) {
+    browser.tabs
+      .create({ url: lastKnownUpdateUrl, active: true })
+      .catch(() => window.open(lastKnownUpdateUrl, "_blank"));
+  }
+}
+
+function dismissUpdate() {
+  els.updateBanner.classList.add("hidden");
+  if (lastKnownUpdateVersion) {
+    browser.storage.local
+      .set({ updateDismissed: lastKnownUpdateVersion })
+      .catch(() => {});
+  }
 }
 
 // --- Actions ---

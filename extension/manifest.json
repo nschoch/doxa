@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Doxa",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "AI comment & video summarizer for Reddit and YouTube. Runs on a local Ollama/ninfer server, or an external API like OpenRouter.",
   "browser_specific_settings": {
     "gecko": {
@@ -15,7 +15,8 @@
     "*://*.youtube.com/*",
     "http://*/*",
     "https://openrouter.ai/*",
-    "https://www.googleapis.com/*"
+    "https://www.googleapis.com/*",
+    "https://api.github.com/*"
   ],
   "background": {
     "scripts": ["background.js"]

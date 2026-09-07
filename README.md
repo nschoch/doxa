@@ -208,12 +208,11 @@ extension/
   are blocked. A local ninfer/OpenAI-compatible server should also allow the
   extension's origin (set `OLLAMA_ORIGINS=*` for Ollama).
 - **Host permission:** the extension requests access to the enabled sites
-  (reddit.com, youtube.com), the provider endpoints (Ollama `:11434`,
-  OpenRouter), and `www.googleapis.com` (the YouTube Data API, fetched from the
-  background so it's CORS-safe). It no longer uses `<all_urls>`, so Safari won't
-  prompt on other sites. A **ninfer** server must be on the same host as Ollama's
-  `:11434` permission or its exact host:port added to `host_permissions` (tell me
-  the host and I'll add it).
+  (reddit.com, youtube.com), `http://*/*` (any local HTTP provider — Ollama or
+  ninfer, on any host/port), `https://openrouter.ai/*`, and
+  `https://www.googleapis.com/*` (the YouTube Data API, fetched from the
+  background so it's CORS-safe). It does not use `<all_urls>` or any port-bearing
+  pattern (WebExtension match patterns don't support ports).
 - **Model quality:** small models produce rougher summaries; larger is better
   but slower.
 - **Privacy:** Ollama and ninfer keep everything on your LAN. OpenRouter sends

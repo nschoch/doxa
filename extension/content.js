@@ -402,10 +402,14 @@
 
   // --- follow-up ---
   async function askFollowup() {
-    const input = cardEl.querySelector(".cs-ask-input");
-    const q = (input.value || "").trim();
-    if (!q || !_lastContext) return;
     const card = ensureCard();
+    const input = cardEl.querySelector(".cs-ask-input");
+    const q = ((input && input.value) || "").trim();
+    if (!q) return;
+    if (!_lastContext) {
+      card.renderFollowupError("Nothing to ask about yet. Summarize a page first.");
+      return;
+    }
     card.askPending();
     const s = await getSettings();
     const provider = s.provider || "ollama";
@@ -427,7 +431,7 @@
     } catch (e) {
       card.renderFollowupError("Error: " + ((e && e.message) || String(e)));
     }
-    input.value = "";
+    card.askDone();
   }
 
   function buildPrompt(comments, host) {
@@ -951,16 +955,25 @@
         q(".cs-followup").className = "cs-followup";
         q(".cs-followup").innerHTML = renderMarkdown(text);
         q(".cs-followup").classList.remove("hidden");
+        scrollBody();
       },
       renderFollowupError(text) {
         q(".cs-followup").className = "cs-followup error";
         q(".cs-followup").textContent = text;
         q(".cs-followup").classList.remove("hidden");
+        scrollBody();
       },
       askPending() {
         const input = q(".cs-ask-input");
         input.placeholder = "Asking…";
         input.disabled = true;
+      },
+      askDone() {
+        const input = q(".cs-ask-input");
+        input.placeholder = "Ask a follow-up…";
+        input.disabled = false;
+        input.value = "";
+        input.focus();
       },
       list(title, text) {
         const s = q(".cs-status");
@@ -978,6 +991,15 @@
   }
 
   // --- safe Markdown -> HTML ---
+  function scrollBody() {
+    if (!cardEl) return;
+    const body = cardEl.querySelector(".cs-body");
+    if (body) {
+      try {
+        body.scrollTop = body.scrollHeight;
+      } catch (_) {}
+    }
+  }
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;")

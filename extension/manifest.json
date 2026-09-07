@@ -13,7 +13,7 @@
   "host_permissions": [
     "*://*.reddit.com/*",
     "*://*.youtube.com/*",
-    "http://*:11434/*",
+    "http://*/*",
     "https://openrouter.ai/*",
     "https://www.googleapis.com/*"
   ],

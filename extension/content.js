@@ -131,7 +131,8 @@
           videoId,
           Number(s.maxComments) || 300,
         );
-        if (r && r.ok && r.comments && r.comments.length) return r.comments;
+        if (r && r.ok && r.comments && r.comments.length)
+          return r.comments.map((c) => ({ text: c, url: "" }));
       } catch (_) {
         /* fall through to DOM scraping */
       }
@@ -251,7 +252,7 @@
     }
     const text = comments
       .slice(0, 60)
-      .map((c, i) => `${i + 1}. ${c}`)
+      .map((c, i) => `${i + 1}. ${c.text}`)
       .join("\n\n");
     card.list(`Extracted ${comments.length} comment(s). Does this match the page?`, text);
   }
@@ -306,7 +307,7 @@
     }
 
     _meta = { countLabel: `${slice.length} comment(s)`, model };
-    _lastContext = { kind: "comments", text: slice.join("\n\n"), host: location.host };
+    _lastContext = { kind: "comments", text: slice.map((c) => c.text).join("\n\n"), host: location.host };
     _currentAction = "comments";
 
     card.status(`Summarizing ${slice.length} comment(s) with ${model}…`, "pending");
@@ -435,7 +436,12 @@
   }
 
   function buildPrompt(comments, host) {
-    const numbered = comments.map((c, i) => `${i + 1}. ${c}`).join("\n");
+    const numbered = comments
+      .map((c, i) => {
+        const base = `${i + 1}. ${c.text}`;
+        return c.url ? `${base}  (permalink: ${c.url})` : base;
+      })
+      .join("\n");
     return [
       `Please summarize the comments from a page on ${host}.`,
       "",
@@ -448,8 +454,11 @@
       "- 3-6 bullets on the most common or important points.",
       "### Consensus vs. disagreement",
       "- What most commenters agree on, and what splits them into camps.",
-      "### Notable comments",
-      "- Only if there's a standout clever, funny, or important comment.",
+      "### Sources",
+      "- Cite the comments you actually referenced as numbered Markdown links,",
+      "  e.g. `[1] [brief label](permalink)`.",
+      "- Use only the permalinks provided above; never invent a URL.",
+      "- If no comment is specifically referenced, you may omit this section.",
       "",
       "Comments:",
       numbered,
@@ -544,13 +553,28 @@
     const seen = new Set();
     const out = [];
     for (const item of list) {
-      const t = String(item).trim();
+      const obj = typeof item === "string" ? { text: item, url: "" } : item;
+      const t = String(obj.text || "").trim();
       if (t && t.length > 3 && !seen.has(t)) {
         seen.add(t);
-        out.push(t);
+        out.push({ text: t, url: obj.url || "" });
       }
     }
     return out;
+  }
+
+  function redditPermalink(node) {
+    try {
+      const p = node.getAttribute ? node.getAttribute("permalink") : "";
+      if (p) return p.startsWith("/") ? "https://www.reddit.com" + p : p;
+      const a = node.querySelector
+        ? node.querySelector('a[href*="/comment/"]')
+        : null;
+      if (a && a.href) return a.href;
+      const cl = node.querySelector ? node.querySelector(".permalink") : null;
+      if (cl && cl.href) return cl.href;
+    } catch (_) {}
+    return "";
   }
 
   function extractRedditComments() {
@@ -571,7 +595,7 @@
           .trim();
         if (t && t.length > 3 && !seen.has(t)) {
           seen.add(t);
-          out.push(t);
+          out.push({ text: t, url: redditPermalink(node) });
         }
       }
       if (out.length) return out;
@@ -585,7 +609,7 @@
         const t = (body.innerText || body.textContent || "").trim();
         if (t && t.length > 3 && !seen.has(t)) {
           seen.add(t);
-          out.push(t);
+          out.push({ text: t, url: redditPermalink(node) });
         }
       }
       if (out.length) return out;
@@ -599,7 +623,7 @@
       const t = (node.innerText || node.textContent || "").trim();
       if (t && t.length > 3 && !seen.has(t)) {
         seen.add(t);
-        out.push(t);
+        out.push({ text: t, url: redditPermalink(node) });
       }
     }
     return out;

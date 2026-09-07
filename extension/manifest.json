@@ -14,7 +14,8 @@
     "*://*.reddit.com/*",
     "*://*.youtube.com/*",
     "http://*:11434/*",
-    "https://openrouter.ai/*"
+    "https://openrouter.ai/*",
+    "https://www.googleapis.com/*"
   ],
   "background": {
     "scripts": ["background.js"]

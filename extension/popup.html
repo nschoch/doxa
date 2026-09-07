@@ -14,14 +14,13 @@
 
     <main>
       <button id="summarizeBtn" class="primary">Summarize comments</button>
-      <button id="videoBtn" class="ghost wide">Summarize video (transcript)</button>
-      <button id="previewBtn" class="ghost wide">Preview comments</button>
+      <button id="geminiBtn" class="ghost wide hidden">Summarize with Gemini (open in tab)</button>
       <p class="hint">The result appears as a card on the page, so you can keep browsing.</p>
 
       <div id="status" class="status hidden"></div>
     </main>
 
-    <details id="settings" class="settings" open>
+    <details id="settings" class="settings">
       <summary>Settings</summary>
 
       <label>
@@ -63,13 +62,8 @@
       </div>
 
       <label id="apiKeyGroup" class="hidden">
-        API key
-        <input id="apiKey" type="password" placeholder="sk-or-… / (local: often blank)" />
-      </label>
-
-      <label>
-        YouTube Data API key (for video comments/transcript)
-        <input id="youtubeApiKey" type="password" placeholder="AIza…" />
+        LLM API key (for OpenRouter / Ninfer)
+        <input id="apiKey" type="password" placeholder="sk-or-… / (blank for a local server)" />
       </label>
 
       <div class="model-actions">
@@ -86,6 +80,10 @@
         <label class="check">
           <input id="siteYoutube" type="checkbox" checked />
           YouTube (needs API key)
+        </label>
+        <label>
+          YouTube Data API key
+          <input id="youtubeApiKey" type="password" placeholder="AIza…" />
         </label>
       </div>
 

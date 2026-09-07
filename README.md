@@ -123,18 +123,24 @@ above is enough.
 ## Usage
 
 1. Open a Reddit thread or a YouTube video.
-2. Click the **Comment Summarizer** toolbar button:
+2. Click the **Doxa** toolbar button:
    - **Summarize comments** — summarizes the thread's comments. On **YouTube**
      this uses the **YouTube Data API** (if you've added a key) to reliably
      fetch the comments; otherwise it falls back to auto-scroll DOM scraping.
-   - **Summarize video (transcript)** — (on a YouTube video) summarizes the
-     captions/transcript.
-   - **Preview comments** — shows exactly what text will be summarized.
+   - **Summarize with Gemini (open in tab)** — (on a YouTube video) opens a
+     fresh `gemini.google.com` chat and **copies the prompt** ("Summarize this
+     video: <url>") to your clipboard. Paste it (⌘V) and press Send. (Gemini
+     strips URL prompt params, so we can't auto-fill.)
 3. The summary appears as an **on-page card** (bottom-right), so it keeps running
    even if you switch tabs or close the popup. Use **Copy** on the card.
 4. **Ask a follow-up** — after a summary, type a question in the card's
    "Ask a follow-up…" field. The answer is grounded in the same source
-   (the comments/transcript) and rendered below the summary.
+   (the comments) and rendered below the summary.
+
+> **Repeat clicks reuse the last result.** If you summarize the same page again
+> (without refreshing), the card shows the cached summary instead of re-running
+> the model. Use the card's **Regenerate** button (or reload the page) to force a
+> fresh summary.
 
 ### Settings (in the popup)
 
@@ -148,17 +154,12 @@ above is enough.
 - **Ninfer URL** — an OpenAI-compatible ninfer endpoint, e.g.
   `http://10.20.10.99:8000/v1`.
 - **Ninfer model** — the model served by ninfer, e.g. `qwen3.6-27b-ninfer`.
-- **API key** — required for OpenRouter, optional for a local ninfer server
-  (shown when an online/local-compatible provider is selected).
-- **YouTube Data API key** — needed to read a video's comments/transcript. YouTube
-  blocks direct scraping (closed shadow DOM + proof-of-origin tokens), so the
-  extension uses the **YouTube Data API v3**. Get a free key at
-  console.cloud.google.com (enable *YouTube Data API v3*), then paste it here.
-  It's stored only in the browser's private extension storage. The **Summarize
-  video** button only appears once a key is set.
-- **Sites** — checkboxes to enable **Reddit** and **YouTube**. The extension only
-  acts on enabled sites (this is what stops Safari asking to access every
-  website). YouTube additionally requires a Data API key.
+- **LLM API key** — for OpenRouter (required) or Ninfer (optional). Distinct from
+  the YouTube Data API key; it's the key for the summarization model.
+- **Sites** — checkboxes to enable **Reddit** and **YouTube**, plus a **YouTube
+  Data API key** field right under the YouTube toggle. The extension only acts on
+  enabled sites (this stops Safari asking to access every website). YouTube
+  additionally requires a Data API key.
 - **Fetch available models** — queries the active provider
   (Ollama `/api/tags`, or the OpenAI-compatible `/models` endpoint) and lets you
   pick a model to fill the model field.
@@ -196,12 +197,12 @@ extension/
   are blocked. A local ninfer/OpenAI-compatible server should also allow the
   extension's origin (set `OLLAMA_ORIGINS=*` for Ollama).
 - **Host permission:** the extension requests access to the enabled sites
-  (reddit.com, youtube.com) plus the provider endpoints (Ollama `:11434`,
-  OpenRouter). It no longer uses `<all_urls>`, so Safari won't prompt on other
-  sites. The YouTube Data API needs no host permission (Google allows CORS).
-  A **ninfer** server must be on the same host as Ollama's `:11434` permission
-  or its exact host:port added to `host_permissions` (tell me the host and I'll
-  add it).
+  (reddit.com, youtube.com), the provider endpoints (Ollama `:11434`,
+  OpenRouter), and `www.googleapis.com` (the YouTube Data API, fetched from the
+  background so it's CORS-safe). It no longer uses `<all_urls>`, so Safari won't
+  prompt on other sites. A **ninfer** server must be on the same host as Ollama's
+  `:11434` permission or its exact host:port added to `host_permissions` (tell me
+  the host and I'll add it).
 - **Model quality:** small models produce rougher summaries; larger is better
   but slower.
 - **Privacy:** Ollama and ninfer keep everything on your LAN. OpenRouter sends

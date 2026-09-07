@@ -34,6 +34,30 @@
   let _meta = { countLabel: "", model: "" };
   let _lastContext = null; // { kind: 'comments'|'transcript', text, host }
   let _lastSummary = "";
+  let _cached = null; // last result for this page load, so repeat clicks reuse it
+  let _currentAction = "comments"; // 'comments' | 'transcript'
+  // Resets on each page load -> a refresh invalidates the cache (per user request).
+  let _pageNonce = performance && performance.timeOrigin ? performance.timeOrigin : Date.now();
+
+  // Cache key: page + source type + provider/model + max, so a repeat click on the
+  // same page reuses the result, but changing provider/model or refreshing doesn't.
+  function makeKey(kind, provider, model, max) {
+    return (
+      location.origin +
+      location.pathname +
+      location.search +
+      "|" +
+      kind +
+      "|" +
+      provider +
+      "|" +
+      model +
+      "|" +
+      (Number(max) || 300) +
+      "|" +
+      _pageNonce
+    );
+  }
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message && message.type === "collect") {
@@ -96,65 +120,18 @@
 
   // Fetches comments via the YouTube Data API v3 (reliable; not blocked by
   // closed shadow DOM / lazy loading). Requires a YouTube Data API key.
-  async function fetchCommentsFromApi(apiKey, videoId, maxResults) {
-    const texts = [];
-    const limit = Number(maxResults) || 300;
-    let pageToken = "";
-    let fetched = 0;
-    let pages = 0;
-    while (fetched < limit && pages < 8) {
-      const url =
-        "https://www.googleapis.com/youtube/v3/commentThreads" +
-        `?part=snippet,replies&videoId=${encodeURIComponent(videoId)}` +
-        `&maxResults=${Math.min(100, limit - fetched) || 100}` +
-        `&textFormat=plainText` +
-        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "") +
-        `&key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        const msg = await res.text().catch(() => "");
-        throw new Error(
-          "YouTube Data API " + res.status + (res.status === 403 ? " (key invalid or quota exceeded)" : "") + " " + msg.slice(0, 120),
-        );
-      }
-      const data = await res.json();
-      const items = data.items || [];
-      for (const it of items) {
-        const top =
-          it.snippet && it.snippet.topLevelComment && it.snippet.topLevelComment.snippet;
-        if (top && top.textDisplay) {
-          texts.push(top.textDisplay.trim());
-          fetched++;
-        }
-        const reps = it.replies && it.replies.comments;
-        if (reps) {
-          for (const r of reps) {
-            if (r.snippet && r.snippet.textDisplay) {
-              texts.push(r.snippet.textDisplay.trim());
-              fetched++;
-            }
-          }
-        }
-      }
-      pageToken = data.nextPageToken;
-      if (!pageToken) break;
-      pages++;
-    }
-    return texts;
-  }
-
-  // On YouTube: prefer the Data API (if a key is set); otherwise fall back to
-  // auto-scroll DOM scraping.
+  // On YouTube: prefer the Data API (fetched via the background port, so CORS is
+  // handled); otherwise fall back to auto-scroll DOM scraping.
   async function getYoutubeComments(s, onProgress) {
     const videoId = getVideoId();
     if (s.youtubeApiKey && videoId) {
       try {
-        const comments = await fetchCommentsFromApi(
+        const r = await fetchCommentsViaBackground(
           s.youtubeApiKey,
           videoId,
           Number(s.maxComments) || 300,
         );
-        if (comments.length) return comments;
+        if (r && r.ok && r.comments && r.comments.length) return r.comments;
       } catch (_) {
         /* fall through to DOM scraping */
       }
@@ -168,9 +145,9 @@
     return s.model || "qwen3.6:35b-a3b";
   }
 
-  // Runs one model query over a long-lived port; resolves with
-  // { ok, summary } or { ok:false, error }.
-  function requestSummary(cfg) {
+  // Runs a request over the long-lived "summarize" port; resolves with the first
+  // message the background sends back.
+  function portRequest(payload) {
     return new Promise((resolve) => {
       let port;
       let settled = false;
@@ -195,22 +172,34 @@
           });
         }
       });
-      const payload = {
-        type: "summarize",
-        provider: cfg.provider,
-        system: cfg.system,
-        user: cfg.user,
-        model: cfg.model,
-        ollamaUrl: cfg.ollamaUrl,
-        apiKey: cfg.apiKey,
-        ninferUrl: cfg.ninferUrl,
-        timeoutSec: cfg.timeoutSec,
-      };
       try {
         port.postMessage(payload);
       } catch (e) {
         resolve({ ok: false, error: String((e && e.message) || e) });
       }
+    });
+  }
+
+  function requestSummary(cfg) {
+    return portRequest({
+      type: "summarize",
+      provider: cfg.provider,
+      system: cfg.system,
+      user: cfg.user,
+      model: cfg.model,
+      ollamaUrl: cfg.ollamaUrl,
+      apiKey: cfg.apiKey,
+      ninferUrl: cfg.ninferUrl,
+      timeoutSec: cfg.timeoutSec,
+    });
+  }
+
+  function fetchCommentsViaBackground(apiKey, videoId, maxResults) {
+    return portRequest({
+      type: "youtube-comments",
+      apiKey,
+      videoId,
+      maxResults,
     });
   }
 
@@ -230,6 +219,13 @@
   }
 
   // --- comments summary ---
+  // Drops the cached result and re-runs the current action (comments/transcript).
+  function regenerate() {
+    _cached = null;
+    if (_currentAction === "transcript") startTranscript();
+    else startSummary();
+  }
+
   async function previewComments() {
     const card = ensureCard();
     card.status("Reading comments…", "pending");
@@ -297,8 +293,21 @@
     const slice = comments.slice(0, Number(s.maxComments) || 300);
     const provider = s.provider || "ollama";
     const model = resolveModel(provider, s);
+    const key = makeKey("comments", provider, model, s.maxComments);
+
+    // If we already summarized this exact page/content this page-load, reuse it.
+    if (_cached && _cached.key === key) {
+      _meta = { countLabel: _cached.count, model };
+      _lastContext = _cached.context;
+      _lastSummary = _cached.summary;
+      _currentAction = "comments";
+      card.result(_cached.summary, _cached.count, model);
+      return;
+    }
+
     _meta = { countLabel: `${slice.length} comment(s)`, model };
     _lastContext = { kind: "comments", text: slice.join("\n\n"), host: location.host };
+    _currentAction = "comments";
 
     card.status(`Summarizing ${slice.length} comment(s) with ${model}…`, "pending");
     const stopTicker = startTicker(card, `Summarizing ${slice.length} comment(s) with ${model}`);
@@ -317,6 +326,7 @@
 
     if (r && r.ok) {
       _lastSummary = r.summary;
+      _cached = { key, summary: r.summary, count: _meta.countLabel, model, context: _lastContext };
       card.result(r.summary, _meta.countLabel, model);
     } else {
       card.status("Error: " + ((r && r.error) || "Summarization failed."), "error");
@@ -348,8 +358,21 @@
       }
       const provider = s.provider || "ollama";
       const model = resolveModel(provider, s);
+      const key = makeKey("transcript", provider, model, s.maxComments);
+
+      // Reuse a cached summary for this video/provider/model this page load.
+      if (_cached && _cached.key === key) {
+        _meta = { countLabel: _cached.count, model };
+        _lastContext = _cached.context;
+        _lastSummary = _cached.summary;
+        _currentAction = "transcript";
+        card.result(_cached.summary, _cached.count, model);
+        return;
+      }
+
       _meta = { countLabel: "Video", model };
       _lastContext = { kind: "transcript", text, host: location.host };
+      _currentAction = "transcript";
 
       card.status(`Summarizing video with ${model}…`, "pending");
       const stopTicker = startTicker(card, `Summarizing video with ${model}`);
@@ -367,6 +390,7 @@
 
       if (r && r.ok) {
         _lastSummary = r.summary;
+        _cached = { key, summary: r.summary, count: _meta.countLabel, model, context: _lastContext };
         card.result(r.summary, _meta.countLabel, model);
       } else {
         card.status("Error: " + ((r && r.error) || "Summarization failed."), "error");
@@ -825,8 +849,9 @@
       #cs-card .cs-status.error { color: #dc2626; }
       #cs-card .cs-result { font-size: 13px; line-height: 1.5; }
       #cs-card .cs-meta { color: #6a737d; font-size: 12px; margin-bottom: 8px; }
-      #cs-card .cs-footer { display: flex; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid #d0d7de; }
+      #cs-card .cs-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid #d0d7de; }
       #cs-card .cs-copy { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+      #cs-card .cs-regen { border: 1px solid #d0d7de; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: #57606a; }
       #cs-card .hidden { display: none; }
       #cs-card .cs-ask { display: flex; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
       #cs-card .cs-ask-input { flex: 1; border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font: inherit; }
@@ -873,7 +898,7 @@
           <button class="cs-ask-btn">Ask</button>
         </div>
       </div>
-      <div class="cs-footer hidden"><button class="cs-copy">Copy</button></div>
+      <div class="cs-footer hidden"><button class="cs-copy">Copy</button><button class="cs-regen">Regenerate</button></div>
     `;
     cardEl.querySelector(".cs-close").addEventListener("click", () => cardEl.remove());
     cardEl.querySelector(".cs-copy").addEventListener("click", async () => {
@@ -885,6 +910,7 @@
         setTimeout(() => (b.textContent = "Copy"), 1200);
       } catch (_) {}
     });
+    cardEl.querySelector(".cs-regen").addEventListener("click", () => regenerate());
     cardEl.querySelector(".cs-ask-btn").addEventListener("click", () => askFollowup());
     cardEl
       .querySelector(".cs-ask-input")

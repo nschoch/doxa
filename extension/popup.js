@@ -7,8 +7,7 @@ const $ = (s) => document.querySelector(s);
 
 const els = {
   summarizeBtn: $("#summarizeBtn"),
-  videoBtn: $("#videoBtn"),
-  previewBtn: $("#previewBtn"),
+  geminiBtn: $("#geminiBtn"),
   status: $("#status"),
   provider: $("#provider"),
   ollamaGroup: $("#ollamaGroup"),
@@ -46,16 +45,15 @@ const DEFAULTS = {
 
 init();
 
-function init() {
+async function init() {
   bind();
-  loadSettings();
+  await loadSettings();
   refreshButtonState();
 }
 
 function bind() {
   els.summarizeBtn.addEventListener("click", doSummarize);
-  els.videoBtn.addEventListener("click", doVideo);
-  els.previewBtn.addEventListener("click", doPreview);
+  els.geminiBtn.addEventListener("click", doGemini);
   els.saveBtn.addEventListener("click", saveSettings);
   els.fetchModelsBtn.addEventListener("click", fetchModels);
   els.modelsList.addEventListener("change", () => {
@@ -130,16 +128,17 @@ async function refreshButtonState() {
 
   const isReddit = host.includes("reddit.com");
   const isYoutube = host.includes("youtube.com");
+  // Ghost the YouTube site toggle until a Data API key is entered.
+  els.siteYoutube.disabled = !hasKey;
   const redditOn = isReddit && sites.includes("reddit");
   const youtubeOn = isYoutube && sites.includes("youtube") && hasKey;
   const enabled = redditOn || youtubeOn;
 
-  // "Summarize video (transcript)" only appears on YouTube with the key set.
-  const videoVisible = isYoutube && sites.includes("youtube") && hasKey;
-  els.videoBtn.classList.toggle("hidden", !videoVisible);
+  // "Summarize with Gemini" appears on any YouTube video (hand-off; no key needed).
+  const geminiVisible = isYoutube && sites.includes("youtube");
+  els.geminiBtn.classList.toggle("hidden", !geminiVisible);
 
   els.summarizeBtn.disabled = !enabled;
-  els.previewBtn.disabled = !enabled;
 
   if (enabled) {
     els.status.classList.add("hidden");
@@ -219,7 +218,8 @@ async function saveSettings() {
 function buildSites() {
   const sites = [];
   if (els.siteReddit.checked) sites.push("reddit");
-  if (els.siteYoutube.checked) sites.push("youtube");
+  // YouTube only counts as enabled once a Data API key is present.
+  if (els.siteYoutube.checked && els.youtubeApiKey.value.trim()) sites.push("youtube");
   return sites;
 }
 
@@ -284,14 +284,45 @@ async function doSummarize() {
   await sendToTab("start", "This isn't a supported page. Open a Reddit thread or a YouTube video.");
 }
 
-async function doVideo() {
-  setStatus("info", "Reading transcript…");
-  await sendToTab("start-transcript", "Open a YouTube video, then try again.");
-}
-
-async function doPreview() {
-  setStatus("info", "Reading comments…");
-  await sendToTab("preview", "This isn't a supported page. Open a Reddit thread or a YouTube video.");
+// Opens Gemini (gemini.google.com) in a new tab. The prompt is copied to the
+// clipboard (Gemini strips URL prompt params, so we can't pre-fill); the user
+// pastes it and presses Send. The tab opens in the background so the popup
+// notice stays visible.
+async function doGemini() {
+  let tab;
+  try {
+    tab = await getActiveTab();
+  } catch (_) {
+    tab = null;
+  }
+  const url = (tab && tab.url) || "";
+  if (!url.includes("youtube.com") || !url.includes("v=")) {
+    setStatus("err", "Open a YouTube video, then try again.");
+    return;
+  }
+  const prompt = `Summarize this video: ${url}`;
+  // Gemini's web app strips URL prompt params (unsupported/redacted), so we can't
+  // reliably pre-fill. Instead: copy the prompt to the clipboard and open a fresh
+  // Gemini chat; the user pastes it (⌘V) and presses Send.
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(prompt);
+    copied = true;
+  } catch (_) {
+    /* clipboard unavailable */
+  }
+  const geminiUrl = "https://gemini.google.com/app";
+  try {
+    await browser.tabs.create({ url: geminiUrl, active: false });
+  } catch (_) {
+    window.open(geminiUrl, "_blank");
+  }
+  setStatus(
+    "info",
+    copied
+      ? "Prompt copied to your clipboard. Gemini opened in a new tab — switch to it, press ⌘V, then Send."
+      : "Gemini opened in a new tab. Paste the video URL and ask it to summarize.",
+  );
 }
 
 async function sendToTab(type, errMsg) {
@@ -312,14 +343,10 @@ async function sendToTab(type, errMsg) {
     setStatus("err", errMsg);
     return;
   }
-  if (type === "preview") {
-    setStatus("info", "Showing extracted comments on the page card.");
-  } else {
-    setStatus(
-      "info",
-      "Working… watch the card on the page. You can switch tabs — it keeps going.",
-    );
-  }
+  setStatus(
+    "info",
+    "Working… watch the card on the page. You can switch tabs — it keeps going.",
+  );
 }
 
 function setStatus(type, text) {

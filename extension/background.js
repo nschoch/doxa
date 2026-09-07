@@ -29,11 +29,22 @@ api.runtime.onConnect.addListener((port) => {
   if (!port || port.name !== "summarize") return;
 
   port.onMessage.addListener((message) => {
-    if (!message || message.type !== "summarize") return;
-    handleSummarize(message)
-      .then((summary) => {
+    if (!message) return;
+    let task = null;
+    if (message.type === "summarize") {
+      task = handleSummarize(message).then((summary) => ({ ok: true, summary }));
+    } else if (message.type === "youtube-comments") {
+      task = dataApiComments(
+        message.apiKey,
+        message.videoId,
+        Number(message.maxResults) || 300,
+      ).then((comments) => ({ ok: true, comments }));
+    }
+    if (!task) return;
+    task
+      .then((result) => {
         try {
-          port.postMessage({ ok: true, summary });
+          port.postMessage(result);
         } catch (_) {
           /* port closed */
         }
@@ -102,6 +113,61 @@ async function listModels(message) {
     .sort();
   if (!models.length) throw new Error("No models returned by the API.");
   return models;
+}
+
+// Fetches comments via the YouTube Data API v3 (this runs in the extension
+// context, so cross-origin/CORS is handled by the extension host permission).
+// Returns an array of comment strings (top-level comments + included replies).
+async function dataApiComments(apiKey, videoId, limit) {
+  if (!apiKey) throw new Error("YouTube Data API key is not set.");
+  if (!videoId) throw new Error("Could not determine the video id.");
+  const texts = [];
+  let pageToken = "";
+  let fetched = 0;
+  let pages = 0;
+  while (fetched < limit && pages < 8) {
+    const url =
+      "https://www.googleapis.com/youtube/v3/commentThreads" +
+      `?part=snippet,replies&videoId=${encodeURIComponent(videoId)}` +
+      `&maxResults=${Math.min(100, limit - fetched) || 100}` +
+      `&textFormat=plainText` +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "") +
+      `&key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(
+        "YouTube Data API " +
+          res.status +
+          (res.status === 403 ? " (key invalid or quota exceeded)" : "") +
+          " " +
+          msg.slice(0, 120),
+      );
+    }
+    const data = await res.json();
+    const items = data.items || [];
+    for (const it of items) {
+      const top =
+        it.snippet && it.snippet.topLevelComment && it.snippet.topLevelComment.snippet;
+      if (top && top.textDisplay) {
+        texts.push(top.textDisplay.trim());
+        fetched++;
+      }
+      const reps = it.replies && it.replies.comments;
+      if (reps) {
+        for (const r of reps) {
+          if (r.snippet && r.snippet.textDisplay) {
+            texts.push(r.snippet.textDisplay.trim());
+            fetched++;
+          }
+        }
+      }
+    }
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+    pages++;
+  }
+  return texts;
 }
 
 async function handleSummarize(message) {

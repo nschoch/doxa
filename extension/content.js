@@ -947,6 +947,16 @@
       .addEventListener("keydown", (e) => {
         if (e.key === "Enter") askFollowup();
       });
+    // Safari can block anchored (target=_blank) navigation from content-script
+    // DOM. On a real click, open the link ourselves to make it work everywhere.
+    cardEl.addEventListener("click", (e) => {
+      const a = e.target && e.target.closest ? e.target.closest("a") : null;
+      if (a && a.getAttribute("href")) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(a.getAttribute("href"), "_blank", "noopener");
+      }
+    });
     document.documentElement.appendChild(cardEl);
     return cardAPI();
   }

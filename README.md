@@ -15,13 +15,24 @@ TL;DR.
 
 ## Requirements
 
-- **Ollama** available over HTTP. This setup uses a LAN host, e.g.
-  `http://10.20.10.99:11434` (it can also be local `127.0.0.1:11434`).
-- A model pulled on that host, e.g. `qwen3.6:35b-a3b`.
+You need **one summarization provider** (pick it in the extension's Settings):
+
+- **Ollama** (local, default) — served over HTTP, e.g.
+  `http://10.20.10.99:11434` or local `127.0.0.1:11434`, with a model pulled
+  (e.g. `qwen3.6:35b-a3b`). Nothing leaves your machine/LAN.
+- **OpenRouter** (online) — an API key + a model id (e.g. `openai/gpt-4o-mini`).
+  A free key is available at openrouter.ai; **no local server required**. Just
+  set the Provider to OpenRouter in Settings and paste your key.
+- **Ninfer** (local, OpenAI-compatible) — a ninfer endpoint on your network.
+
+Plus:
+
 - **Firefox** (to load the extension directly) and/or **Xcode + Safari**
   (to convert and run on Safari).
+- Optional: a **YouTube Data API key** to summarize YouTube comments
+  (free from console.cloud.google.com → enable YouTube Data API v3).
 
-## 1. Set up Ollama
+## 1. Set up Ollama (local provider)
 
 On the machine running Ollama, pull a model:
 

@@ -842,7 +842,8 @@
       #cs-card * { box-sizing: border-box; }
       #cs-card .cs-header { display: flex; align-items: center; justify-content: space-between;
         padding: 10px 12px; border-bottom: 1px solid #d0d7de; font-weight: 600; }
-      #cs-card .cs-close { border: none; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: #6a737d; }
+      #cs-card .cs-header span { flex: 1; min-width: 0; line-height: 1.25; }
+      #cs-card .cs-close { flex: none; border: none; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: #6a737d; margin-left: 8px; }
       #cs-card .cs-body { padding: 12px; overflow: auto; max-height: 58vh; }
       #cs-card .cs-status { white-space: pre-wrap; }
       #cs-card .cs-status.pending { color: #1e40af; }
@@ -887,7 +888,7 @@
     cardEl = document.createElement("div");
     cardEl.id = "cs-card";
     cardEl.innerHTML = `
-      <div class="cs-header"><span>Doxa</span><button class="cs-close" title="Close">×</button></div>
+      <div class="cs-header"><span>Doxa — Reddit &amp; YouTube Summarizer</span><button class="cs-close" title="Close">×</button></div>
       <div class="cs-body">
         <div class="cs-status pending"></div>
         <div class="cs-meta hidden"></div>

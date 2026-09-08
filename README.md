@@ -104,10 +104,18 @@ or signing required.
 ### 2b. Permanent / signed install — for regular use
 
 Release Firefox only accepts **Mozilla-signed** add-ons, so to keep Doxa
-installed you need a signed `.xpi`. Signing goes through
+installed you need a signed `.xpi`.
+
+**Install (easiest):** download the already-signed **`.xpi`** from the latest
+[Release](https://github.com/nschoch/doxa/releases) — it's named
+`doxa-<version>-fx.xpi` — then `about:addons` → gear → **Install Add-on From
+File** (or drag the file onto the `about:addons` page). No account or signing
+needed.
+
+**Building a new signed version (maintainer):** signing goes through
 [addons.mozilla.org (AMO)](https://addons.mozilla.org/developers/).
 
-**Manifest requirements (already present in this repo):**
+Manifest requirements (already present in this repo):
 
 - `browser_specific_settings.gecko.id` — a permanent add-on id
   (`comment-summarizer@local`).
@@ -119,7 +127,7 @@ installed you need a signed `.xpi`. Signing goes through
   `data_collection_permissions` is only honored from Firefox 140+ (142 on
   Android).
 
-**Sign it:**
+To produce a signed `.xpi`:
 
 1. Create an AMO account and generate **API credentials** (issuer + secret) at
    https://addons.mozilla.org/developers/addon/api/key/.
@@ -136,8 +144,6 @@ installed you need a signed `.xpi`. Signing goes through
      --api-key <issuer> --api-secret <secret>
    ```
    Both produce a **signed `.xpi`** (e.g. `doxa-extension-<version>-an+fx.xpi`).
-4. Install it: `about:addons` → gear → **Install Add-on From File**, or drag the
-   `.xpi` onto the `about:addons` page.
 
 Because this is self-hosted ("on your own"), Firefox won't auto-update it; the
 extension's own **"Update available"** banner points at each new GitHub Release
@@ -246,6 +252,10 @@ exists, shows an **"Update available"** banner with a **View release** button
 that opens the release page in a new tab (the footer also shows your installed
 version and a **Check for updates** link to force a re-check). Dismiss it with
 **×** and it won't nag about that same version again.
+
+> **If it's listed on AMO:** Firefox auto-updates the add-on from
+> addons.mozilla.org, so this in-extension banner isn't needed for listed builds —
+> it only matters for self-hosted `.xpi` installs.
 
 For this to work, each new version must be published as a GitHub Release with a
 version tag (e.g. `v1.0.0`); pre-releases and drafts are ignored. Checks are

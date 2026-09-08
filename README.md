@@ -154,20 +154,23 @@ inside a small macOS **container app**. You convert the same `extension/` folder
 with Apple's command-line converter (bundled with Xcode). **You need Xcode** —
 install it from the App Store, then in Terminal run:
 
-> **Paste it as one line.** If you break this across lines with `\`
-> continuations, the paste usually mangles them and the converter runs with no
-> path — printing **"Please provide a path to a web extension to convert."**
-> Run this copy-paste-safe one-liner from inside the folder that contains
-> `extension/`:
+> **Paste it as one line** and don't use `--project-name`. Run this inside the
+> folder that contains `extension/`:
 
 ```bash
-xcrun safari-web-extension-converter --project-name CommentSummarizer --app-name "Comment Summarizer" --bundle-identifier com.example.commentsummarizer --macos-only --force extension/
+xcrun safari-web-extension-converter --app-name "Comment Summarizer" --bundle-identifier com.example.commentsummarizer --macos-only --force extension/
 ```
 
-> If you're not sure you're in the right folder, first check that
-> `extension/manifest.json` exists (`ls extension`), then run it there. The
-> project is generated into your current directory as
-> `CommentSummarizer.xcodeproj`.
+> Gotchas:
+> - **Don't pass `--project-name`** — it isn't a supported flag (the tool is a
+>   thin wrapper around Apple's `safari-web-extension-packager`). Passing it
+>   makes the converter print **"Please provide a path to a web extension to
+>   convert."** and abort, even if `extension/` is right there.
+> - Don't break the command across lines with `\` continuations; a mangled paste
+>   produces the same "no path" error.
+> - First confirm `extension/manifest.json` exists (`ls extension`).
+> - The project is generated into a `Comment Summarizer/` folder beside the
+>   source as `Comment Summarizer/Comment Summarizer.xcodeproj`.
 
 > **If `xcrun` says "unable to find utility":** your `xcode-select` is pointed at
 > the Command Line Tools, not Xcode. Either fix it (`sudo xcode-select -s

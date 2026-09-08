@@ -86,6 +86,15 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
     return true; // async response
   }
+  // A card link was clicked; the content script can't reliably open a new tab in
+  // Safari, so we do it here. browser.tabs.create needs no extra permission.
+  if (message && message.type === "open-url") {
+    if (message.url) {
+      api.tabs.create({ url: message.url }).catch(() => {});
+    }
+    sendResponse({ ok: true });
+    return;
+  }
 });
 
 async function listModels(message) {

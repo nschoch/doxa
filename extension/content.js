@@ -909,14 +909,19 @@
       .addEventListener("keydown", (e) => {
         if (e.key === "Enter") askFollowup();
       });
-    // Safari can block anchored (target=_blank) navigation from content-script
-    // DOM. On a real click, open the link ourselves to make it work everywhere.
+    // Open linked sources in a new tab. Safari doesn't reliably honor
+    // window.open from a content script (and its "noopener" feature string is
+    // inconsistent), and target=_blank navigation from content-script DOM can be
+    // flaky, so hand the URL to the background, which calls browser.tabs.create —
+    // that works in both Firefox and Safari.
     cardEl.addEventListener("click", (e) => {
       const a = e.target && e.target.closest ? e.target.closest("a") : null;
       if (a && a.getAttribute("href")) {
         e.preventDefault();
         e.stopPropagation();
-        window.open(a.getAttribute("href"), "_blank", "noopener");
+        browser.runtime
+          .sendMessage({ type: "open-url", url: a.getAttribute("href") })
+          .catch(() => {});
       }
     });
     document.documentElement.appendChild(cardEl);

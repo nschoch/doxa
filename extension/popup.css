@@ -100,6 +100,36 @@ button.ghost.saved {
   background: #ecfdf3;
 }
 
+/* Gemini hand-off button — a distinct, colorful CTA that mirrors Gemini's
+   blue → violet → magenta gradient plus a sparkle, so it clearly reads as a
+   separate option from the plain "Summarize comments" button. (Rules come
+   after the .ghost rules so the gradient wins on tie specificity.) */
+button.gemini {
+  background: linear-gradient(135deg, #3b82f6 0%, #7c3aed 52%, #db2777 100%);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.35);
+}
+
+button.gemini::before {
+  content: "\2726"; /* four-pointed sparkle, like the Gemini mark */
+  margin-right: 6px;
+}
+
+button.gemini:hover {
+  background: linear-gradient(135deg, #5b8efb 0%, #8f5bf6 52%, #ee4d9b 100%);
+}
+
+button.gemini:active {
+  transform: translateY(1px);
+}
+
+button.gemini:focus-visible {
+  outline: 2px solid #db2777;
+  outline-offset: 2px;
+}
+
 .status {
   margin-top: 10px;
   padding: 8px 10px;

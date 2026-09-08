@@ -40,10 +40,10 @@ const els = {
 
 const DEFAULTS = {
   provider: "ollama",
-  ollamaUrl: "http://10.20.10.99:11434",
+  ollamaUrl: "http://localhost:11434",
   model: "qwen3.6:35b-a3b",
   openrouterModel: "openai/gpt-4o-mini",
-  ninferUrl: "http://10.20.10.99:8000/v1",
+  ninferUrl: "http://localhost:8000/v1",
   ninferModel: "qwen3.6-27b-ninfer",
   timeoutSec: 180,
   maxComments: 300,

@@ -17,8 +17,8 @@ TL;DR.
 
 You need **one summarization provider** (pick it in the extension's Settings):
 
-- **Ollama** (local, default) — served over HTTP, e.g.
-  `http://10.20.10.99:11434` or local `127.0.0.1:11434`, with a model pulled
+- **Ollama** (local, default) — served over HTTP, e.g. local
+  `http://localhost:11434` (or another host on your LAN), with a model pulled
   (e.g. `qwen3.6:35b-a3b`). Nothing leaves your machine/LAN.
 - **OpenRouter** (online) — an API key + a model id (e.g. `openai/gpt-4o-mini`).
   A free key is available at openrouter.ai; **no local server required**. Just
@@ -77,7 +77,7 @@ If you run Ollama as a background service, stop it and start it with the env
 var (or add it to your launch config). Test it reaches the model:
 
 ```bash
-curl http://10.20.10.99:11434/api/chat -d '{
+curl http://localhost:11434/api/chat -d '{
   "model":"qwen3.6:35b-a3b",
   "messages":[{"role":"user","content":"Say hello"}],
   "stream":false
@@ -256,12 +256,12 @@ rate-limited to at most one GitHub API call every 6 hours per machine.
 - **Provider** — `Ollama (local)`, `OpenRouter (online)`, or `Ninfer (local,
   OpenAI-compatible)`. Each provider's model is saved **separately**, so
   switching doesn't clobber values.
-- **Ollama URL** — defaults to `http://10.20.10.99:11434` (run the server with
+- **Ollama URL** — defaults to `http://localhost:11434` (run the server with
   `OLLAMA_ORIGINS=*` so the extension's browser requests are allowed).
 - **Ollama model** — your pulled local model, e.g. `qwen3.6:35b-a3b`.
 - **OpenRouter model** — an OpenRouter model id, e.g. `openai/gpt-4o-mini`.
 - **Ninfer URL** — an OpenAI-compatible ninfer endpoint, e.g.
-  `http://10.20.10.99:8000/v1`.
+  `http://localhost:8000/v1`.
 - **Ninfer model** — the model served by ninfer, e.g. `qwen3.6-27b-ninfer`.
 - **LLM API key** — for OpenRouter (required) or Ninfer (optional). Distinct from
   the YouTube Data API key; it's the key for the summarization model.

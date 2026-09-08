@@ -15,9 +15,8 @@ const api =
 const DEFAULTS = {
   ollamaUrl: "http://localhost:11434",
   model: "qwen3.6:35b-a3b",
-  openrouterModel: "openai/gpt-4o-mini",
-  ninferUrl: "http://localhost:8000/v1",
-  ninferModel: "qwen3.6-27b-ninfer",
+  openaiBaseUrl: "http://localhost:8000/v1",
+  openaiModel: "qwen3.6-27b-ninfer",
   timeoutSec: 180,
 };
 
@@ -106,14 +105,8 @@ async function listModels(message) {
     return models;
   }
 
-  // OpenAI-compatible (OpenRouter / ninfer)
-  const baseUrl = (
-    message.baseUrl ||
-    message.ninferUrl ||
-    (provider === "openrouter"
-      ? "https://openrouter.ai/api/v1"
-      : DEFAULTS.ninferUrl)
-  ).replace(/\/+$/, "");
+  // OpenAI-compatible (OpenRouter or a custom local server)
+  const baseUrl = (message.baseUrl || DEFAULTS.openaiBaseUrl).replace(/\/+$/, "");
   const headers = {};
   if (message.apiKey) headers.Authorization = `Bearer ${message.apiKey}`;
   const res = await fetchWithTimeout(`${baseUrl}/models`, { headers }, timeoutSec);
@@ -185,30 +178,18 @@ async function dataApiComments(apiKey, videoId, limit) {
 async function handleSummarize(message) {
   const provider = message.provider || "ollama";
   const timeoutSec = Number(message.timeoutSec) || DEFAULTS.timeoutSec;
-  const system = message.system;
-  const user = message.user;
 
-  if (provider === "openrouter") {
+  if (provider !== "ollama") {
+    // One OpenAI-compatible path for OpenRouter *and* any custom local server.
+    const baseUrl = (message.baseUrl || DEFAULTS.openaiBaseUrl).replace(/\/+$/, "");
     return callOpenAICompatible(
-      message.baseUrl || "https://openrouter.ai/api/v1",
+      baseUrl,
       message.apiKey,
-      message.model || message.openrouterModel || DEFAULTS.openrouterModel,
-      system,
-      user,
+      message.model || message.openaiModel || DEFAULTS.openaiModel,
+      message.system,
+      message.user,
       timeoutSec,
-      true, // require key
-    );
-  }
-
-  if (provider === "ninfer") {
-    return callOpenAICompatible(
-      message.baseUrl || message.ninferUrl || DEFAULTS.ninferUrl,
-      message.apiKey,
-      message.model || message.ninferModel || DEFAULTS.ninferModel,
-      system,
-      user,
-      timeoutSec,
-      false, // key optional on a local network server
+      !!message.requireKey, // required for OpenRouter; optional for a local server
     );
   }
 

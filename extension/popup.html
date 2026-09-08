@@ -39,8 +39,7 @@
         Provider
         <select id="provider">
           <option value="ollama">Ollama (local)</option>
-          <option value="openrouter">OpenRouter (online)</option>
-          <option value="ninfer">Ninfer (local, OpenAI-compatible)</option>
+          <option value="openai">OpenAI-compatible</option>
         </select>
       </label>
 
@@ -55,26 +54,26 @@
         </label>
       </div>
 
-      <div id="onlineGroup" class="hidden">
+      <div id="openaiGroup" class="hidden">
         <label>
-          OpenRouter model
-          <input id="openrouterModel" type="text" placeholder="openai/gpt-4o-mini" />
-        </label>
-      </div>
-
-      <div id="ninferGroup" class="hidden">
-        <label>
-          Ninfer URL
-          <input id="ninferUrl" type="text" placeholder="http://localhost:8000/v1" />
+          Preset
+          <select id="openaiPreset">
+            <option value="custom">Custom (any OpenAI-compatible server)</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
         </label>
         <label>
-          Ninfer model
-          <input id="ninferModel" type="text" placeholder="qwen3.6-27b-ninfer" />
+          Base URL
+          <input id="openaiBaseUrl" type="text" placeholder="http://localhost:8000/v1" />
+        </label>
+        <label>
+          Model
+          <input id="openaiModel" type="text" placeholder="openai/gpt-4o-mini" />
         </label>
       </div>
 
       <label id="apiKeyGroup" class="hidden">
-        LLM API key (for OpenRouter / Ninfer)
+        LLM API key (required for OpenRouter; optional for a custom server)
         <input id="apiKey" type="password" placeholder="sk-or-… / (blank for a local server)" />
       </label>
 

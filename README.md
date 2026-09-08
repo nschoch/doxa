@@ -19,10 +19,11 @@ You need **one summarization provider** (pick it in the extension's Settings):
 - **Ollama** (local, default) — served over HTTP, e.g. local
   `http://localhost:11434` (or another host on your LAN), with a model pulled
   (e.g. `qwen3.6:35b-a3b`). Nothing leaves your machine/LAN.
-- **OpenRouter** (online) — an API key + a model id (e.g. `openai/gpt-4o-mini`).
-  A free key is available at openrouter.ai; **no local server required**. Just
-  set the Provider to OpenRouter in Settings and paste your key.
-- **Ninfer** (local, OpenAI-compatible) — a ninfer endpoint on your network.
+- **OpenAI-compatible** (OpenRouter or a custom server) — any server that speaks
+  the OpenAI chat-completions API. **OpenRouter** is a built-in preset (an API
+  key + a model id, e.g. `openai/gpt-4o-mini`; a free key is available at
+  openrouter.ai, **no local server required**), or use a **custom** server (e.g.
+  a local ninfer/LM Studio/vLLM endpoint) by setting the base URL.
 
 Plus:
 
@@ -252,18 +253,20 @@ rate-limited to at most one GitHub API call every 6 hours per machine.
 
 ### Settings (in the popup)
 
-- **Provider** — `Ollama (local)`, `OpenRouter (online)`, or `Ninfer (local,
-  OpenAI-compatible)`. Each provider's model is saved **separately**, so
-  switching doesn't clobber values.
+- **Provider** — `Ollama (local)` or `OpenAI-compatible`. When you pick
+  OpenAI-compatible, choose a **Preset**: **Custom** (any OpenAI-compatible
+  server) or **OpenRouter**.
 - **Ollama URL** — defaults to `http://localhost:11434` (run the server with
   `OLLAMA_ORIGINS=*` so the extension's browser requests are allowed).
 - **Ollama model** — your pulled local model, e.g. `qwen3.6:35b-a3b`.
-- **OpenRouter model** — an OpenRouter model id, e.g. `openai/gpt-4o-mini`.
-- **Ninfer URL** — an OpenAI-compatible ninfer endpoint, e.g.
-  `http://localhost:8000/v1`.
-- **Ninfer model** — the model served by ninfer, e.g. `qwen3.6-27b-ninfer`.
-- **LLM API key** — for OpenRouter (required) or Ninfer (optional). Distinct from
-  the YouTube Data API key; it's the key for the summarization model.
+- **Base URL** — the OpenAI-compatible endpoint. For the **OpenRouter** preset
+  this is locked to `https://openrouter.ai/api/v1`; for **Custom** set your
+  server, e.g. `http://localhost:8000/v1` (ninfer/LM Studio/vLLM).
+- **Model** — the model id for the OpenAI-compatible provider, e.g.
+  `openai/gpt-4o-mini` (OpenRouter) or your local model.
+- **LLM API key** — required for OpenRouter, optional for a custom local server.
+  Distinct from the YouTube Data API key; it's the key for the summarization
+  model.
 - **Sites** — checkboxes to enable **Reddit** and **YouTube**, plus a **YouTube
   Data API key** field right under the YouTube toggle. The extension only acts on
   enabled sites (this stops Safari asking to access every website). On YouTube,
@@ -278,16 +281,17 @@ rate-limited to at most one GitHub API call every 6 hours per machine.
 - **Max comments** — cap on comments sent (keeps requests fast).
 - **Auto-save settings** — persists changes as you type.
 
-> **Privacy note:** Ollama and ninfer keep everything on your LAN. OpenRouter
-> sends the extracted text to an external API — only use it if that's OK.
+> **Privacy note:** Ollama and a custom local server keep everything on your LAN.
+> OpenRouter sends the extracted text to an external API — only use it if that's
+> OK.
 
 ## File structure
 
 ```
 extension/
   manifest.json    # MV3 manifest (Firefox/Safari)
-  background.js    # provider call (Ollama / ninfer / OpenRouter) + configurable timeout
-  content.js       # extractors, transcript grab, on-page card, follow-up, orchestration
+  background.js    # provider call (Ollama / OpenAI-compatible) + configurable timeout
+  content.js       # extractors, on-page card, follow-up, orchestration
   popup.html/css   # toolbar popup (trigger + settings)
   popup.js         # triggers the content script, saves settings
   icons/           # placeholder toolbar icons
@@ -295,9 +299,8 @@ extension/
 
 ## Caveats / known limitations
 
-- **YouTube transcript:** the extension reads the video's caption tracks from the
-  page. Not all videos have captions; auto-generated ones may be rough. The
-  transcript is truncated to ~120k chars before summarization.
+- **No video transcript summarization:** the extension summarizes comments; it
+  does not currently summarize a video's spoken transcript.
 - **YouTube comment lazy-loading:** auto-scroll loads loaded comments; content
   may still be partial.
 - **Reddit DOM churn:** Reddit A/B-tests its UI; the extractors cover the current
@@ -309,10 +312,10 @@ extension/
   in Safari) that Ollama rejects by default — you'll see **"Ollama returned 403."**
   Fix it with `OLLAMA_ORIGINS=*` (or the specific origin) and restart Ollama
   (`launchctl setenv OLLAMA_ORIGINS "*"` on macOS, then reopen the app). A local
-  ninfer/OpenAI-compatible server should allow the extension origin too.
+  custom OpenAI-compatible server should allow the extension origin too.
 - **Host permission:** the extension requests access to the enabled sites
   (reddit.com, youtube.com), `http://*/*` (any local HTTP provider — Ollama or
-  ninfer, on any host/port), `https://openrouter.ai/*`,
+  a custom server, on any host/port), `https://openrouter.ai/*`,
   `https://www.googleapis.com/*` (the YouTube Data API, fetched from the
   background so it's CORS-safe), and `https://api.github.com/*` (update
   checks). It does not use `<all_urls>` or any port-bearing
@@ -322,5 +325,5 @@ extension/
   — the popup shows a warning when a non-loopback `http://` URL is set.
 - **Model quality:** small models produce rougher summaries; larger is better
   but slower.
-- **Privacy:** Ollama and ninfer keep everything on your LAN. OpenRouter sends
+- **Privacy:** Ollama and a custom local server keep everything on your LAN. OpenRouter sends
   text to an external API.

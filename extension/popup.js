@@ -11,14 +11,13 @@ const els = {
   status: $("#status"),
   provider: $("#provider"),
   ollamaGroup: $("#ollamaGroup"),
-  onlineGroup: $("#onlineGroup"),
-  ninferGroup: $("#ninferGroup"),
+  openaiGroup: $("#openaiGroup"),
   apiKeyGroup: $("#apiKeyGroup"),
   ollamaUrl: $("#ollamaUrl"),
   model: $("#model"),
-  openrouterModel: $("#openrouterModel"),
-  ninferUrl: $("#ninferUrl"),
-  ninferModel: $("#ninferModel"),
+  openaiPreset: $("#openaiPreset"),
+  openaiBaseUrl: $("#openaiBaseUrl"),
+  openaiModel: $("#openaiModel"),
   apiKey: $("#apiKey"),
   youtubeApiKey: $("#youtubeApiKey"),
   siteReddit: $("#siteReddit"),
@@ -43,15 +42,16 @@ const DEFAULTS = {
   provider: "ollama",
   ollamaUrl: "http://localhost:11434",
   model: "qwen3.6:35b-a3b",
-  openrouterModel: "openai/gpt-4o-mini",
-  ninferUrl: "http://localhost:8000/v1",
-  ninferModel: "qwen3.6-27b-ninfer",
+  openaiPreset: "custom",
+  openaiBaseUrl: "http://localhost:8000/v1",
+  openaiModel: "qwen3.6-27b-ninfer",
   timeoutSec: 180,
   maxComments: 300,
 };
 
 const RELEASES_PAGE = "https://github.com/nschoch/doxa/releases";
 const README_URL = "https://github.com/nschoch/doxa";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1";
 // Latest version we've shown the banner for (null until one is known).
 let lastKnownUpdateVersion = null;
 let lastKnownUpdateUrl = RELEASES_PAGE;
@@ -91,6 +91,10 @@ function bind() {
     refreshButtonState();
     if (els.autoSave.checked) saveSettings();
   });
+  els.openaiPreset.addEventListener("change", () => {
+    updateVisibility();
+    if (els.autoSave.checked) saveSettings();
+  });
   els.siteReddit.addEventListener("change", () => {
     saveSettings();
     refreshButtonState();
@@ -111,9 +115,8 @@ function bind() {
   [
     els.ollamaUrl,
     els.model,
-    els.openrouterModel,
-    els.ninferUrl,
-    els.ninferModel,
+    els.openaiBaseUrl,
+    els.openaiModel,
     els.apiKey,
     els.youtubeApiKey,
     els.timeoutSec,
@@ -129,14 +132,21 @@ function bind() {
 function updateVisibility() {
   const p = els.provider.value;
   const isOllama = p === "ollama";
-  const isOpenrouter = p === "openrouter";
-  const isNinfer = p === "ninfer";
+  const isOpenai = p === "openai";
   els.ollamaGroup.classList.toggle("hidden", !isOllama);
-  els.onlineGroup.classList.toggle("hidden", !isOpenrouter);
-  els.ninferGroup.classList.toggle("hidden", !isNinfer);
-  // API key is shared by online providers (OpenRouter requires it; Ninfer optional).
+  els.openaiGroup.classList.toggle("hidden", !isOpenai);
+  // API key is used by the OpenAI-compatible provider (required for OpenRouter,
+  // optional for a custom local server).
   els.apiKeyGroup.classList.toggle("hidden", isOllama);
+  updateOpenAIUI();
   updateSecurityWarning();
+}
+
+// Lock the base URL to OpenRouter when the preset is chosen.
+function updateOpenAIUI() {
+  const isOpenrouter = els.openaiPreset.value === "openrouter";
+  els.openaiBaseUrl.disabled = isOpenrouter;
+  if (isOpenrouter) els.openaiBaseUrl.value = OPENROUTER_URL;
 }
 
 // Warn if the active provider is a plain-http URL on a non-loopback host (so
@@ -144,8 +154,8 @@ function updateVisibility() {
 // loopback and fine. Helps the add-on stay within AMO's encryption expectations.
 function updateSecurityWarning() {
   const url =
-    els.provider.value === "ninfer"
-      ? els.ninferUrl.value.trim()
+    els.provider.value === "openai"
+      ? els.openaiBaseUrl.value.trim()
       : els.provider.value === "ollama"
         ? els.ollamaUrl.value.trim()
         : "";
@@ -213,9 +223,9 @@ async function loadSettings() {
       "provider",
       "ollamaUrl",
       "model",
-      "openrouterModel",
-      "ninferUrl",
-      "ninferModel",
+      "openaiPreset",
+      "openaiBaseUrl",
+      "openaiModel",
       "apiKey",
       "youtubeApiKey",
       "sites",
@@ -225,9 +235,16 @@ async function loadSettings() {
     els.provider.value = s.provider || DEFAULTS.provider;
     els.ollamaUrl.value = s.ollamaUrl || DEFAULTS.ollamaUrl;
     els.model.value = s.model || DEFAULTS.model;
-    els.openrouterModel.value = s.openrouterModel || DEFAULTS.openrouterModel;
-    els.ninferUrl.value = s.ninferUrl || DEFAULTS.ninferUrl;
-    els.ninferModel.value = s.ninferModel || DEFAULTS.ninferModel;
+    els.openaiPreset.value = s.openaiPreset || DEFAULTS.openaiPreset;
+    els.openaiBaseUrl.value = s.openaiBaseUrl || DEFAULTS.openaiBaseUrl;
+    els.openaiModel.value = s.openaiModel || DEFAULTS.openaiModel;
+    // Migrate the old (pre-1.0.6) openrouter/ninfer settings into the unified
+    // OpenAI-compatible fields so existing users keep their config.
+    if (!s.openaiBaseUrl && s.ninferUrl) els.openaiBaseUrl.value = s.ninferUrl;
+    if (!s.openaiModel && (s.openrouterModel || s.ninferModel)) {
+      els.openaiModel.value = s.openrouterModel || s.ninferModel;
+    }
+    if (!s.openaiPreset && s.openrouterModel) els.openaiPreset.value = "openrouter";
     els.apiKey.value = s.apiKey || "";
     els.youtubeApiKey.value = s.youtubeApiKey || "";
     const sites = Array.isArray(s.sites) ? s.sites : ["reddit", "youtube"];
@@ -238,9 +255,9 @@ async function loadSettings() {
   } catch (_) {
     els.ollamaUrl.value = DEFAULTS.ollamaUrl;
     els.model.value = DEFAULTS.model;
-    els.openrouterModel.value = DEFAULTS.openrouterModel;
-    els.ninferUrl.value = DEFAULTS.ninferUrl;
-    els.ninferModel.value = DEFAULTS.ninferModel;
+    els.openaiPreset.value = DEFAULTS.openaiPreset;
+    els.openaiBaseUrl.value = DEFAULTS.openaiBaseUrl;
+    els.openaiModel.value = DEFAULTS.openaiModel;
     els.timeoutSec.value = DEFAULTS.timeoutSec;
     els.maxComments.value = DEFAULTS.maxComments;
   }
@@ -252,9 +269,9 @@ async function saveSettings() {
     provider: els.provider.value,
     ollamaUrl: last(els.ollamaUrl.value, DEFAULTS.ollamaUrl),
     model: last(els.model.value, DEFAULTS.model),
-    openrouterModel: last(els.openrouterModel.value, DEFAULTS.openrouterModel),
-    ninferUrl: last(els.ninferUrl.value, DEFAULTS.ninferUrl),
-    ninferModel: last(els.ninferModel.value, DEFAULTS.ninferModel),
+    openaiPreset: els.openaiPreset.value,
+    openaiBaseUrl: last(els.openaiBaseUrl.value, DEFAULTS.openaiBaseUrl),
+    openaiModel: last(els.openaiModel.value, DEFAULTS.openaiModel),
     apiKey: els.apiKey.value.trim(),
     youtubeApiKey: els.youtubeApiKey.value.trim(),
     sites: buildSites(),
@@ -296,8 +313,7 @@ function flashSaved() {
 
 function activeModelInput() {
   const p = els.provider.value;
-  if (p === "openrouter") return els.openrouterModel;
-  if (p === "ninfer") return els.ninferModel;
+  if (p === "openai") return els.openaiModel;
   return els.model;
 }
 
@@ -306,12 +322,16 @@ async function fetchModels() {
   const provider = els.provider.value;
   let resp;
   try {
+    const baseUrl =
+      provider === "openai" && els.openaiPreset.value === "openrouter"
+        ? OPENROUTER_URL
+        : last(els.openaiBaseUrl.value, DEFAULTS.openaiBaseUrl);
     resp = await browser.runtime.sendMessage({
       type: "list-models",
       provider,
       ollamaUrl: last(els.ollamaUrl.value, DEFAULTS.ollamaUrl),
       apiKey: els.apiKey.value.trim(),
-      ninferUrl: last(els.ninferUrl.value, DEFAULTS.ninferUrl),
+      baseUrl,
       timeoutSec: 30,
     });
   } catch (e) {

@@ -71,10 +71,10 @@
     return browser.storage.local.get([
       "provider",
       "model",
-      "openrouterModel",
-      "ninferModel",
+      "openaiPreset",
+      "openaiBaseUrl",
+      "openaiModel",
       "ollamaUrl",
-      "ninferUrl",
       "apiKey",
       "youtubeApiKey",
       "sites",
@@ -122,9 +122,15 @@
   }
 
   function resolveModel(provider, s) {
-    if (provider === "openrouter") return s.openrouterModel || "openai/gpt-4o-mini";
-    if (provider === "ninfer") return s.ninferModel || "qwen3.6-27b-ninfer";
+    if (provider === "openai") return s.openaiModel || "qwen3.6-27b-ninfer";
     return s.model || "qwen3.6:35b-a3b";
+  }
+
+  // Base URL for the OpenAI-compatible provider; OpenRouter is a fixed preset.
+  function resolveBaseUrl(provider, s) {
+    if (provider !== "openai") return "";
+    if (s.openaiPreset === "openrouter") return "https://openrouter.ai/api/v1";
+    return s.openaiBaseUrl || "http://localhost:8000/v1";
   }
 
   // Runs a request over the long-lived "summarize" port; resolves with the first
@@ -170,8 +176,9 @@
       user: cfg.user,
       model: cfg.model,
       ollamaUrl: cfg.ollamaUrl,
+      baseUrl: cfg.baseUrl,
       apiKey: cfg.apiKey,
-      ninferUrl: cfg.ninferUrl,
+      requireKey: !!cfg.requireKey,
       timeoutSec: cfg.timeoutSec,
     });
   }
@@ -286,8 +293,9 @@
       user: buildPrompt(slice, location.host),
       model,
       ollamaUrl: s.ollamaUrl,
+      baseUrl: resolveBaseUrl(provider, s),
       apiKey: s.apiKey,
-      ninferUrl: s.ninferUrl,
+      requireKey: provider === "openai" && s.openaiPreset === "openrouter",
       timeoutSec: s.timeoutSec,
     });
     stopTicker();
@@ -326,8 +334,9 @@
         user,
         model,
         ollamaUrl: s.ollamaUrl,
+        baseUrl: resolveBaseUrl(provider, s),
         apiKey: s.apiKey,
-        ninferUrl: s.ninferUrl,
+        requireKey: provider === "openai" && s.openaiPreset === "openrouter",
         timeoutSec: s.timeoutSec,
       });
       if (r && r.ok) card.renderFollowup(r.summary);

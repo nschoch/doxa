@@ -33,7 +33,7 @@
   // Cache key: page + source type + provider/model + max + per-thread cap, so a
   // repeat click on the same page reuses the result, but changing provider/model,
   // the comment caps, or refreshing doesn't.
-  function makeKey(kind, provider, model, max, perThread) {
+  function makeKey(kind, provider, model, max, perThread, maxDepth) {
     return (
       location.origin +
       location.pathname +
@@ -48,6 +48,10 @@
       (Number(max) || 300) +
       "|" +
       (Number(perThread) || REDDIT_MAX_PER_THREAD) +
+      "|" +
+      (maxDepth === undefined || maxDepth === null || maxDepth === ""
+        ? "all"
+        : String(maxDepth)) +
       "|" +
       _pageNonce
     );
@@ -84,6 +88,7 @@
       "timeoutSec",
       "maxComments",
       "redditPerThread",
+      "redditMaxDepth",
     ]);
   }
 
@@ -260,9 +265,10 @@
         ),
       );
     } else {
-      // redditPerThread is a user setting ("Max comments per thread (Reddit)");
-      // fall back to the built-in default when it isn't configured yet.
-      comments = collectComments(s.redditPerThread);
+      // redditPerThread / redditMaxDepth are user settings ("Max comments per
+      // thread (Reddit)" / "Max reply depth (Reddit)"); fall back to the
+      // built-in defaults when they aren't configured yet.
+      comments = collectComments(s.redditPerThread, s.redditMaxDepth);
     }
 
     if (!comments.length) {
@@ -276,7 +282,7 @@
     const slice = comments.slice(0, Number(s.maxComments) || 300);
     const provider = s.provider || "ollama";
     const model = resolveModel(provider, s);
-    const key = makeKey("comments", provider, model, s.maxComments, s.redditPerThread);
+    const key = makeKey("comments", provider, model, s.maxComments, s.redditPerThread, s.redditMaxDepth);
 
     // If we already summarized this exact page/content this page-load, reuse it.
     if (_cached && _cached.key === key) {
@@ -403,9 +409,11 @@
   }
 
   // --- comment extraction ---
-  function collectComments(redditPerThread) {
+  function collectComments(redditPerThread, redditMaxDepth) {
     const host = location.host;
-    if (host.includes("reddit.com")) return extractRedditComments(redditPerThread);
+    if (host.includes("reddit.com")) {
+      return extractRedditComments(redditPerThread, redditMaxDepth);
+    }
     if (host.includes("youtube.com")) return extractYoutubeComments();
     return [];
   }
@@ -449,13 +457,48 @@
   // REDDIT_MAX_PER_THREAD is the default when the setting is absent.
   const REDDIT_MAX_PER_THREAD = 30;
 
-  // Walks shreddit-comment nodes in document order and keeps up to `perThread`
-  // from each top-level thread (thread root + its deepest displayed replies).
-  // A new thread starts at depth="0", or — when the depth attribute is absent —
-  // at any element with no shreddit-comment ancestor (safe for both nested and
-  // flat reply layouts, because Reddit always renders a thread contiguously).
-  function capRedditByThread(nodes, perThread) {
+  // Resolves the "Max reply depth (Reddit)" setting: how many reply levels under
+  // each top-level comment to include (0 = top-level comments only). null/absent
+  // => no depth limit (previous behavior).
+  function redditDepthLimit(maxDepth) {
+    if (maxDepth === undefined || maxDepth === null || maxDepth === "") return null;
+    const n = parseInt(maxDepth, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
+  // Reply level of a comment inside its thread: 0 = the thread's own top-level
+  // comment. Trusts the depth attribute when present (shreddit ships depth="0"
+  // for top-level comments, incrementing per reply level); otherwise counts the
+  // shreddit-comment ancestors inside the thread (nested markup without attrs).
+  function redditReplyDepth(el, threadRoot) {
+    if (!el || el === threadRoot) return 0;
+    let attr = "";
+    try {
+      attr = (el.getAttribute && el.getAttribute("depth")) || "";
+    } catch (_) {}
+    if (/^\d+$/.test(attr)) return parseInt(attr, 10);
+    let level = 0;
+    try {
+      let p = el.parentElement;
+      while (p) {
+        const isComment = (p.tagName || "").toLowerCase() === "shreddit-comment";
+        if (isComment || p === threadRoot) level++;
+        if (p === threadRoot) break;
+        p = p.parentElement;
+      }
+    } catch (_) {}
+    return level;
+  }
+
+  // Walks shreddit-comment nodes in document order and keeps at most `perThread`
+  // comments from each top-level thread, skipping replies deeper than `maxDepth`
+  // (both user-configurable). A new thread starts at depth="0", or — when the
+  // depth attribute is absent — at any element with no shreddit-comment ancestor
+  // (safe for both nested and flat reply layouts, because Reddit always renders
+  // a thread contiguously).
+  function capRedditByThread(nodes, perThread, maxDepth) {
     const limit = Math.max(1, parseInt(perThread, 10) || REDDIT_MAX_PER_THREAD);
+    const depthLimit = redditDepthLimit(maxDepth);
     const groups = [];
     let current = null;
     for (const el of nodes) {
@@ -481,18 +524,27 @@
     }
     const picked = [];
     for (const g of groups) {
-      for (let i = 0; i < g.length && i < limit; i++) picked.push(g[i]);
+      const root = g[0];
+      let kept = 0;
+      for (const el of g) {
+        if (depthLimit !== null && redditReplyDepth(el, root) > depthLimit) {
+          continue; // too deep for this thread — skip, don't spend budget
+        }
+        picked.push(el);
+        kept++;
+        if (kept >= limit) break;
+      }
     }
     return picked;
   }
 
-  function extractRedditComments(redditPerThread) {
+  function extractRedditComments(redditPerThread, redditMaxDepth) {
     const seen = new Set();
 
     const shreddit = document.querySelectorAll("shreddit-comment");
     if (shreddit.length) {
       const out = [];
-      for (const node of capRedditByThread(shreddit, redditPerThread)) {
+      for (const node of capRedditByThread(shreddit, redditPerThread, redditMaxDepth)) {
         const body = node.querySelector('div[slot="comment"]') || node;
         let t = (body.innerText || body.textContent || "").trim();
         t = t

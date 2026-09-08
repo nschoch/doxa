@@ -293,6 +293,10 @@ rate-limited to at most one GitHub API call every 6 hours per machine.
   thread contributes (default 30), so one huge off-topic thread can't crowd out
   the rest of the discussion. Raise it to sample deeper threads; set it near
   **Max comments** to effectively disable the per-thread cap.
+- **Max reply depth (Reddit)** — how many reply levels under each top-level
+  Reddit comment to include (default: no limit). **0** = top-level comments
+  only; combine it with the per-thread cap to keep the sample out of deep
+  off-topic tangents.
 - **Auto-save settings** — persists changes as you type.
 
 > **Privacy note:** Ollama and a custom local server keep everything on your LAN.

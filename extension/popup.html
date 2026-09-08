@@ -112,11 +112,27 @@
         Max comments per thread (Reddit)
         <input id="redditPerThread" type="number" min="1" max="2000" />
       </label>
+
+      <label>
+        Max reply depth (Reddit)
+        <select id="redditMaxDepth">
+          <option value="">No limit (default)</option>
+          <option value="0">Top-level comments only</option>
+          <option value="1">1 reply level</option>
+          <option value="2">2 reply levels</option>
+          <option value="3">3 reply levels</option>
+          <option value="4">4 reply levels</option>
+          <option value="5">5 reply levels</option>
+          <option value="6">6 reply levels</option>
+          <option value="8">8 reply levels</option>
+          <option value="10">10 reply levels</option>
+        </select>
+      </label>
       <p class="hint">
-        On Reddit, each top-level thread contributes at most this many comments
-        (default 30), so one huge off-topic thread can't crowd out the rest of
-        the discussion. Raise it for deeper threads; set it near "Max comments
-        to send" to effectively disable the per-thread cap.
+        On Reddit, per-thread caps stop one huge off-topic thread from crowding
+        out the rest of the discussion: "Max comments per thread" bounds each
+        thread's size (default 30), and "Max reply depth" stops the sample from
+        diving deep into nested reply chains (no limit by default).
       </p>
 
       <label class="check">

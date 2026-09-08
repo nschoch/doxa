@@ -27,6 +27,7 @@ const els = {
   timeoutSec: $("#timeoutSec"),
   maxComments: $("#maxComments"),
   redditPerThread: $("#redditPerThread"),
+  redditMaxDepth: $("#redditMaxDepth"),
   autoSave: $("#autoSave"),
   saveBtn: $("#saveBtn"),
   helpLink: $("#helpLink"),
@@ -104,6 +105,9 @@ function bind() {
   els.siteYoutube.addEventListener("change", () => {
     saveSettings();
     refreshButtonState();
+  });
+  els.redditMaxDepth.addEventListener("change", () => {
+    if (els.autoSave.checked) saveSettings();
   });
   els.autoSave.addEventListener("change", () => {
     if (els.autoSave.checked) saveSettings();
@@ -235,6 +239,7 @@ async function loadSettings() {
       "timeoutSec",
       "maxComments",
       "redditPerThread",
+      "redditMaxDepth",
     ]);
     els.provider.value = s.provider || DEFAULTS.provider;
     els.ollamaUrl.value = s.ollamaUrl || DEFAULTS.ollamaUrl;
@@ -257,6 +262,12 @@ async function loadSettings() {
     els.timeoutSec.value = s.timeoutSec || DEFAULTS.timeoutSec;
     els.maxComments.value = s.maxComments || DEFAULTS.maxComments;
     els.redditPerThread.value = s.redditPerThread || DEFAULTS.redditPerThread;
+    // Absent/blank "Max reply depth" = no limit (the select's default option).
+    const depth = s.redditMaxDepth;
+    els.redditMaxDepth.value =
+      depth === undefined || depth === null || depth === ""
+        ? ""
+        : String(depth);
   } catch (_) {
     els.ollamaUrl.value = DEFAULTS.ollamaUrl;
     els.model.value = DEFAULTS.model;
@@ -266,12 +277,13 @@ async function loadSettings() {
     els.timeoutSec.value = DEFAULTS.timeoutSec;
     els.maxComments.value = DEFAULTS.maxComments;
     els.redditPerThread.value = DEFAULTS.redditPerThread;
+    els.redditMaxDepth.value = ""; // no limit
   }
   updateVisibility();
 }
 
 async function saveSettings() {
-  await browser.storage.local.set({
+  const data = {
     provider: els.provider.value,
     ollamaUrl: last(els.ollamaUrl.value, DEFAULTS.ollamaUrl),
     model: last(els.model.value, DEFAULTS.model),
@@ -284,7 +296,21 @@ async function saveSettings() {
     timeoutSec: Number(els.timeoutSec.value) || DEFAULTS.timeoutSec,
     maxComments: Number(els.maxComments.value) || DEFAULTS.maxComments,
     redditPerThread: Number(els.redditPerThread.value) || DEFAULTS.redditPerThread,
-  });
+  };
+  // "Max reply depth": leave the key out entirely when the select is on
+  // "No limit" (blank) — the extractor treats an absent value as unlimited.
+  // storage.set merges keys, so explicitly drop a stale saved depth.
+  if (els.redditMaxDepth.value !== "") {
+    data.redditMaxDepth = Number(els.redditMaxDepth.value);
+  }
+  await browser.storage.local.set(data);
+  if (els.redditMaxDepth.value === "") {
+    try {
+      await browser.storage.local.remove("redditMaxDepth");
+    } catch (_) {
+      /* storage unavailable */
+    }
+  }
 }
 
 function buildSites() {

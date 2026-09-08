@@ -49,6 +49,9 @@ function makeComment(depth, name) {
     get parentElement() {
       return this.parent;
     },
+    get tagName() {
+      return this.tag.toUpperCase(); // real custom elements expose an uppercase tagName
+    },
     getAttribute(n) {
       return n === "depth" && this.depth !== undefined ? String(this.depth) : null;
     },
@@ -192,6 +195,69 @@ console.log("\nScenario 4 — per-thread cap honors a user-supplied value");
     const bigCount = picked.filter((p) => p.name === "Big" || p.name.startsWith("Big/")).length;
     check(bigCount === 30, `unset/invalid perThread (${String(setting)}) falls back to default 30 (got ${bigCount})`);
   }
+}
+
+// --- Scenario 5: max reply depth (attr-based + nested fallback) ---
+console.log("\nScenario 5 — max reply depth (depth=\"N\" attrs; 0 = top-level only)");
+{
+  // Two threads with explicit depth attributes, nested for realism:
+  //   Big:    R(d0), rA(d1), rA1(d2), rA2(d3), rB(d1), rB1(d2)
+  //   Small:  S(d0), sA(d1), sB(d1)
+  const roots = [];
+  const R = makeComment(0, "R");
+  roots.push(R);
+  const rA = parentOf(makeComment(1, "rA"), R);
+  const rA1 = parentOf(makeComment(2, "rA1"), rA);
+  parentOf(makeComment(3, "rA2"), rA1);
+  const rB = parentOf(makeComment(1, "rB"), R);
+  parentOf(makeComment(2, "rB1"), rB);
+  const S = makeComment(0, "S");
+  roots.push(S);
+  parentOf(makeComment(1, "sA"), S);
+  parentOf(makeComment(1, "sB"), S);
+  const all = docOrder(roots);
+  check(all.length === 9, `fixture has ${all.length} comments (expect 9)`);
+
+  const names = (picked) => picked.map((p) => p.name).join(",");
+
+  let p = cap(all, 30, 0);
+  check(names(p) === "R,S", `depth 0 keeps only top-level comments (got: ${names(p)})`);
+
+  p = cap(all, 30, 1);
+  check(names(p) === "R,rA,rB,S,sA,sB", `depth 1 keeps direct replies (got: ${names(p)})`);
+
+  p = cap(all, 30, 2);
+  check(names(p) === "R,rA,rA1,rB,rB1,S,sA,sB", `depth 2 excludes the d3 comment (got: ${names(p)})`);
+
+  p = cap(all, 30, null);
+  check(p.length === 9, `no depth limit keeps all ${p.length} (expect 9)`);
+
+  // Both knobs together: Big is capped at its 4 shallowest comments (depth<=2),
+  // then Small contributes fully.
+  p = cap(all, 4, 2);
+  check(
+    names(p) === "R,rA,rA1,rB,S,sA,sB",
+    `perThread=4 + depth=2 → Big capped at 4 shallowest, Small kept (got: ${names(p)})`,
+  );
+  check(p.length === 7, `combined caps yield ${p.length} comments (expect 7)`);
+}
+
+console.log("\nScenario 6 — max reply depth without depth attrs (ancestor-count fallback)");
+{
+  // A deep no-attr chain: each reply nests under the previous one.
+  const root = makeComment(undefined, "L0");
+  let parent = root;
+  for (let i = 1; i <= 5; i++) parent = parentOf(makeComment(undefined, `L${i}`), parent);
+  const all = docOrder([root]);
+  check(all.length === 6, `chain fixture has ${all.length} comments (expect 6)`);
+
+  const names = (picked) => picked.map((p) => p.name).join(",");
+  check(names(cap(all, 30, 0)) === "L0", "depth 0 keeps only the root");
+  check(names(cap(all, 30, 1)) === "L0,L1", "depth 1 keeps root + first reply");
+  check(names(cap(all, 30, 2)) === "L0,L1,L2", "depth 2 keeps root + 2 reply levels");
+  check(cap(all, 30, null).length === 6, "no depth limit keeps the whole chain");
+  // Skipping deep comments must not consume the per-thread budget:
+  check(names(cap(all, 5, 2)) === "L0,L1,L2", "deep skips don't spend the per-thread budget");
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nAll checks passed.");

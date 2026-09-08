@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Doxa",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "AI comment & video summarizer for Reddit and YouTube. Runs on a local Ollama, or any OpenAI-compatible server (custom or OpenRouter).",
   "homepage_url": "https://github.com/nschoch/doxa",
   "developer": {

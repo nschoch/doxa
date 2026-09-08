@@ -1,7 +1,6 @@
 // Content script for Doxa.
 // Injected into Reddit and YouTube pages. It:
 //   - collects loaded comments (Reddit/YouTube), auto-scrolling YouTube first,
-//   - extracts a YouTube video's transcript (captions),
 //   - shows an on-page card that renders the summary as formatted Markdown,
 //   - lets the user ask a follow-up question (grounded in the same source),
 //   - proxies requests to the background worker over a long-lived port.
@@ -17,13 +16,6 @@
     "Be neutral, do not invent details, and stay under ~250 words.",
   ].join(" ");
 
-  const TRANSCRIPT_SYSTEM_PROMPT = [
-    "You are a precise assistant that summarizes video transcripts.",
-    "Write a concise, well-structured summary in Markdown.",
-    "Capture the key points, important details, and any actions or conclusions.",
-    "Be neutral, do not invent details, and stay under ~300 words.",
-  ].join(" ");
-
   const FOLLOWUP_SYSTEM_PROMPT = [
     "You are answering a follow-up question about content that was already summarized.",
     "Answer using ONLY the provided content. Do not invent facts.",
@@ -32,10 +24,9 @@
 
   // --- state ---
   let _meta = { countLabel: "", model: "" };
-  let _lastContext = null; // { kind: 'comments'|'transcript', text, host }
+  let _lastContext = null; // { kind: 'comments', text, host }
   let _lastSummary = "";
   let _cached = null; // last result for this page load, so repeat clicks reuse it
-  let _currentAction = "comments"; // 'comments' | 'transcript'
   // Resets on each page load -> a refresh invalidates the cache (per user request).
   let _pageNonce = performance && performance.timeOrigin ? performance.timeOrigin : Date.now();
 
@@ -67,16 +58,6 @@
     }
     if (message && message.type === "start") {
       startSummary();
-      sendResponse({ ok: true });
-      return;
-    }
-    if (message && message.type === "start-transcript") {
-      startTranscript();
-      sendResponse({ ok: true });
-      return;
-    }
-    if (message && message.type === "preview") {
-      previewComments();
       sendResponse({ ok: true });
       return;
     }
@@ -239,41 +220,10 @@
   }
 
   // --- comments summary ---
-  // Drops the cached result and re-runs the current action (comments/transcript).
+  // Drops the cached result and re-runs the summary.
   function regenerate() {
     _cached = null;
-    if (_currentAction === "transcript") startTranscript();
-    else startSummary();
-  }
-
-  async function previewComments() {
-    const card = ensureCard();
-    card.status("Reading comments…", "pending");
-    const s = await getSettings();
-    const isYoutube = location.host.includes("youtube.com");
-    if (!isSiteEnabled(s)) {
-      card.status("This site isn't enabled in Settings. Enable it under Settings → Sites.", "error");
-      return;
-    }
-    if (isYoutube && !s.youtubeApiKey) {
-      card.status("Add a YouTube Data API key in Settings to read comments on YouTube.", "error");
-      return;
-    }
-    let comments;
-    if (isYoutube) {
-      comments = await getYoutubeComments(s);
-    } else {
-      comments = collectComments();
-    }
-    if (!comments.length) {
-      card.status("No comments found on this page.", "error");
-      return;
-    }
-    const text = comments
-      .slice(0, 60)
-      .map((c, i) => `${i + 1}. ${c.text}`)
-      .join("\n\n");
-    card.list(`Extracted ${comments.length} comment(s). Does this match the page?`, text);
+    startSummary();
   }
 
   async function startSummary() {
@@ -320,14 +270,12 @@
       _meta = { countLabel: _cached.count, model };
       _lastContext = _cached.context;
       _lastSummary = _cached.summary;
-      _currentAction = "comments";
       card.result(_cached.summary, _cached.count, model);
       return;
     }
 
     _meta = { countLabel: `${slice.length} comment(s)`, model };
     _lastContext = { kind: "comments", text: slice.map((c) => c.text).join("\n\n"), host: location.host };
-    _currentAction = "comments";
 
     card.status(`Summarizing ${slice.length} comment(s) with ${model}…`, "pending");
     const stopTicker = startTicker(card, `Summarizing ${slice.length} comment(s) with ${model}`);
@@ -350,73 +298,6 @@
       card.result(r.summary, _meta.countLabel, model);
     } else {
       card.status("Error: " + ((r && r.error) || "Summarization failed."), "error");
-    }
-  }
-
-  // --- YouTube transcript summary ---
-  async function startTranscript() {
-    const card = ensureCard();
-    if (!location.host.includes("youtube.com")) {
-      card.status("Transcript summarization works on YouTube videos.", "error");
-      return;
-    }
-    const s = await getSettings();
-    if (!isSiteEnabled(s)) {
-      card.status("YouTube isn't enabled in Settings. Enable it under Settings → Sites.", "error");
-      return;
-    }
-    if (!s.youtubeApiKey) {
-      card.status("Add a YouTube Data API key in Settings to summarize a video.", "error");
-      return;
-    }
-    card.status("Loading transcript…", "pending");
-    try {
-      const text = await getTranscript();
-      if (!text || text.length < 20) {
-        card.status("No transcript found for this video.", "error");
-        return;
-      }
-      const provider = s.provider || "ollama";
-      const model = resolveModel(provider, s);
-      const key = makeKey("transcript", provider, model, s.maxComments);
-
-      // Reuse a cached summary for this video/provider/model this page load.
-      if (_cached && _cached.key === key) {
-        _meta = { countLabel: _cached.count, model };
-        _lastContext = _cached.context;
-        _lastSummary = _cached.summary;
-        _currentAction = "transcript";
-        card.result(_cached.summary, _cached.count, model);
-        return;
-      }
-
-      _meta = { countLabel: "Video", model };
-      _lastContext = { kind: "transcript", text, host: location.host };
-      _currentAction = "transcript";
-
-      card.status(`Summarizing video with ${model}…`, "pending");
-      const stopTicker = startTicker(card, `Summarizing video with ${model}`);
-      const r = await requestSummary({
-        provider,
-        system: TRANSCRIPT_SYSTEM_PROMPT,
-        user: buildTranscriptPrompt(text),
-        model,
-        ollamaUrl: s.ollamaUrl,
-        apiKey: s.apiKey,
-        ninferUrl: s.ninferUrl,
-        timeoutSec: s.timeoutSec,
-      });
-      stopTicker();
-
-      if (r && r.ok) {
-        _lastSummary = r.summary;
-        _cached = { key, summary: r.summary, count: _meta.countLabel, model, context: _lastContext };
-        card.result(r.summary, _meta.countLabel, model);
-      } else {
-        card.status("Error: " + ((r && r.error) || "Summarization failed."), "error");
-      }
-    } catch (e) {
-      card.status("Error: " + ((e && e.message) || String(e)), "error");
     }
   }
 
@@ -489,24 +370,6 @@
     ].join("\n");
   }
 
-  function buildTranscriptPrompt(text) {
-    const capped = text.length > 120000 ? text.slice(0, 120000) + "\n…(truncated)" : text;
-    return [
-      "Please summarize the following video transcript.",
-      "",
-      "Use this structure:",
-      "### TL;DR",
-      "- One or two sentences on what the video is about.",
-      "### Key points",
-      "- 4-8 bullets on the main ideas, details, or conclusions.",
-      "### Actions / takeaways",
-      "- Only if the video recommends steps or decisions.",
-      "",
-      "Transcript:",
-      capped,
-    ].join("\n");
-  }
-
   function buildFollowupPrompt(sourceText, summary, question) {
     const capped =
       sourceText.length > 120000 ? sourceText.slice(0, 120000) + "\n…(truncated)" : sourceText;
@@ -522,47 +385,6 @@
     ]
       .filter(Boolean)
       .join("\n");
-  }
-
-  // --- YouTube transcript extraction ---
-  async function getTranscript() {
-    const pr = extractPlayerResponse();
-    const tracks =
-      pr &&
-      pr.captions &&
-      pr.captions.playerCaptionsTracklistRenderer &&
-      pr.captions.playerCaptionsTracklistRenderer.captionTracks;
-    if (!tracks || !tracks.length) {
-      throw new Error("No captions/transcript available for this video.");
-    }
-    const track =
-      tracks.find((t) => (t.languageCode || "").toLowerCase().startsWith("en")) ||
-      tracks[0];
-    const baseUrl = track.baseUrl;
-    if (!baseUrl) throw new Error("Captions URL not found for this video.");
-
-    const url = baseUrl + (baseUrl.includes("fmt=") ? "" : "&fmt=json3");
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Could not fetch the transcript (HTTP " + res.status + ").");
-    const data = await res.json();
-
-    let text = "";
-    if (data && Array.isArray(data.events)) {
-      for (const ev of data.events) {
-        if (ev && Array.isArray(ev.segs)) {
-          for (const seg of ev.segs) {
-            if (seg && seg.utf8) text += seg.utf8;
-          }
-        }
-      }
-    }
-    return text.trim();
-  }
-
-  // Reads the page's ytInitialPlayerResponse (from a <script> tag or window) to
-  // find caption tracks. Robust across browsers / content-script isolation.
-  function extractPlayerResponse() {
-    return getPageVar("ytInitialPlayerResponse");
   }
 
   // --- comment extraction ---
@@ -1039,18 +861,6 @@
         input.disabled = false;
         input.value = "";
         input.focus();
-      },
-      list(title, text) {
-        const s = q(".cs-status");
-        s.textContent = title;
-        s.className = "cs-status pending";
-        q(".cs-meta").textContent = "";
-        q(".cs-meta").classList.remove("hidden");
-        q(".cs-result").textContent = text;
-        q(".cs-result").classList.remove("hidden");
-        q(".cs-followup").classList.add("hidden");
-        q(".cs-ask").classList.add("hidden");
-        q(".cs-footer").classList.add("hidden");
       },
     };
   }

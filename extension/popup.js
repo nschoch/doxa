@@ -36,6 +36,7 @@ const els = {
   dismissUpdateBtn: $("#dismissUpdateBtn"),
   versionLabel: $("#versionLabel"),
   checkUpdatesLink: $("#checkUpdatesLink"),
+  insecureWarn: $("#insecureWarn"),
 };
 
 const DEFAULTS = {
@@ -120,6 +121,7 @@ function bind() {
   ].forEach((el) => {
     el.addEventListener("input", () => {
       if (els.autoSave.checked) saveSettings();
+      updateSecurityWarning();
     });
   });
 }
@@ -134,6 +136,26 @@ function updateVisibility() {
   els.ninferGroup.classList.toggle("hidden", !isNinfer);
   // API key is shared by online providers (OpenRouter requires it; Ninfer optional).
   els.apiKeyGroup.classList.toggle("hidden", isOllama);
+  updateSecurityWarning();
+}
+
+// Warn if the active provider is a plain-http URL on a non-loopback host (so
+// data sent to it isn't encrypted). OpenRouter is https; localhost/127.0.0.1 is
+// loopback and fine. Helps the add-on stay within AMO's encryption expectations.
+function updateSecurityWarning() {
+  const url =
+    els.provider.value === "ninfer"
+      ? els.ninferUrl.value.trim()
+      : els.provider.value === "ollama"
+        ? els.ollamaUrl.value.trim()
+        : "";
+  const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url);
+  const insecure = /^http:\/\//i.test(url) && !isLoopback;
+  els.insecureWarn.classList.toggle("hidden", !insecure);
+  if (insecure) {
+    els.insecureWarn.textContent =
+      "Heads-up: this provider is served over plain http, so text sent to it isn't encrypted. Use https or a localhost/loopback URL if that matters.";
+  }
 }
 
 // Show/hide + enable/disable buttons based on the current tab's site, the

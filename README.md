@@ -304,16 +304,23 @@ extension/
 - **Reddit DOM churn:** Reddit A/B-tests its UI; the extractors cover the current
   `shreddit-comment`, `[data-testid="comment"]`, and old-style layouts, but may
   need updates if Reddit changes.
-- **CORS:** run Ollama with `OLLAMA_ORIGINS` allowing the extension, or requests
-  are blocked. A local ninfer/OpenAI-compatible server should also allow the
-  extension's origin (set `OLLAMA_ORIGINS=*` for Ollama).
+- **CORS / "Ollama returned 403":** run Ollama with `OLLAMA_ORIGINS` allowing the
+  extension, or requests are blocked. A plain-http request from the extension
+  carries an `Origin` (`moz-extension://…` in Firefox, `safari-web-extension://…`
+  in Safari) that Ollama rejects by default — you'll see **"Ollama returned 403."**
+  Fix it with `OLLAMA_ORIGINS=*` (or the specific origin) and restart Ollama
+  (`launchctl setenv OLLAMA_ORIGINS "*"` on macOS, then reopen the app). A local
+  ninfer/OpenAI-compatible server should allow the extension origin too.
 - **Host permission:** the extension requests access to the enabled sites
   (reddit.com, youtube.com), `http://*/*` (any local HTTP provider — Ollama or
   ninfer, on any host/port), `https://openrouter.ai/*`,
   `https://www.googleapis.com/*` (the YouTube Data API, fetched from the
   background so it's CORS-safe), and `https://api.github.com/*` (update
   checks). It does not use `<all_urls>` or any port-bearing
-  pattern (WebExtension match patterns don't support ports).
+  pattern (WebExtension match patterns can't express ports). `http://*/*` is the
+  minimum that lets a configurable local provider run on an arbitrary LAN
+  host:port. For a plain-http provider, prefer `localhost`/`127.0.0.1` or **https**
+  — the popup shows a warning when a non-loopback `http://` URL is set.
 - **Model quality:** small models produce rougher summaries; larger is better
   but slower.
 - **Privacy:** Ollama and ninfer keep everything on your LAN. OpenRouter sends

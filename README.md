@@ -154,15 +154,20 @@ inside a small macOS **container app**. You convert the same `extension/` folder
 with Apple's command-line converter (bundled with Xcode). **You need Xcode** —
 install it from the App Store, then in Terminal run:
 
+> **Paste it as one line.** If you break this across lines with `\`
+> continuations, the paste usually mangles them and the converter runs with no
+> path — printing **"Please provide a path to a web extension to convert."**
+> Run this copy-paste-safe one-liner from inside the folder that contains
+> `extension/`:
+
 ```bash
-xcrun safari-web-extension-converter \
-  --project-name CommentSummarizer \
-  --app-name "Comment Summarizer" \
-  --bundle-identifier com.example.commentsummarizer \
-  --macos-only \
-  --force \
-  extension/
+xcrun safari-web-extension-converter --project-name CommentSummarizer --app-name "Comment Summarizer" --bundle-identifier com.example.commentsummarizer --macos-only --force extension/
 ```
+
+> If you're not sure you're in the right folder, first check that
+> `extension/manifest.json` exists (`ls extension`), then run it there. The
+> project is generated into your current directory as
+> `CommentSummarizer.xcodeproj`.
 
 > **If `xcrun` says "unable to find utility":** your `xcode-select` is pointed at
 > the Command Line Tools, not Xcode. Either fix it (`sudo xcode-select -s

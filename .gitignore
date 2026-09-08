@@ -18,6 +18,7 @@ doxa-amo.env
 doxa-extension-*.zip
 web-ext-artifacts/
 doxa-*.xpi
+.amo-upload-uuid
 
 # local work-state memo (not part of the deliverable)
 PROGRESS.md

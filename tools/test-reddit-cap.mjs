@@ -23,9 +23,10 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const src = readFileSync(path.join(root, "extension", "content.js"), "utf8");
 
-// Pull the real function out of the content script (it sits right before
-// extractRedditComments, so its end is unambiguous).
-const start = src.indexOf("function capRedditByThread");
+// Pull the real function (plus the default constant it falls back to) out of
+// the content script. capRedditByThread sits right before extractRedditComments,
+// so that boundary marks the end of the slice.
+const start = src.indexOf("const REDDIT_MAX_PER_THREAD");
 const end = src.indexOf("\n  function extractRedditComments", start);
 if (start === -1 || end === -1) {
   console.error("Could not locate capRedditByThread in content.js");
@@ -161,6 +162,36 @@ console.log("\nScenario 3 — depth attribute absent; nested markup");
   const g1 = picked.filter((p) => p.name.startsWith("noDepth-1")).length;
   const g2 = picked.filter((p) => p.name.startsWith("noDepth-2")).length;
   check(g1 === 30 && g2 === 1 && picked.length === 31, `no-depth nested chain capped at 30 (got ${g1}), next root kept (${g2})`);
+}
+
+// --- Scenario 4: the cap is configurable (popup "Max comments per thread") ---
+console.log("\nScenario 4 — per-thread cap honors a user-supplied value");
+{
+  const threads = [];
+  const big = makeComment(0, "Big");
+  addThread(threads, big, 200, null, true); // 200 nested replies
+  threads.push(makeComment(0, "Lone"));
+
+  for (const [setting, expectBig, expectTotal] of [
+    [5, 5, 6],
+    [30, 30, 31],
+    [100, 100, 101],
+  ]) {
+    const picked = cap(docOrder(threads), setting);
+    const bigCount = picked.filter((p) => p.name === "Big" || p.name.startsWith("Big/")).length;
+    check(
+      bigCount === expectBig && picked.length === expectTotal,
+      `perThread=${setting}: big thread contributes ${bigCount} (expect ${expectBig}), total ${picked.length} (expect ${expectTotal})`,
+    );
+  }
+
+  // Absent/invalid setting falls back to the default (30), matching a fresh user
+  // who hasn't opened the popup yet.
+  for (const setting of [undefined, null, "abc", NaN]) {
+    const picked = cap(docOrder(threads), setting);
+    const bigCount = picked.filter((p) => p.name === "Big" || p.name.startsWith("Big/")).length;
+    check(bigCount === 30, `unset/invalid perThread (${String(setting)}) falls back to default 30 (got ${bigCount})`);
+  }
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nAll checks passed.");

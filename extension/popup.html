@@ -108,6 +108,17 @@
         <input id="maxComments" type="number" min="1" max="2000" />
       </label>
 
+      <label>
+        Max comments per thread (Reddit)
+        <input id="redditPerThread" type="number" min="1" max="2000" />
+      </label>
+      <p class="hint">
+        On Reddit, each top-level thread contributes at most this many comments
+        (default 30), so one huge off-topic thread can't crowd out the rest of
+        the discussion. Raise it for deeper threads; set it near "Max comments
+        to send" to effectively disable the per-thread cap.
+      </p>
+
       <label class="check">
         <input id="autoSave" type="checkbox" checked />
         Save settings automatically

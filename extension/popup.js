@@ -26,6 +26,7 @@ const els = {
   modelsList: $("#modelsList"),
   timeoutSec: $("#timeoutSec"),
   maxComments: $("#maxComments"),
+  redditPerThread: $("#redditPerThread"),
   autoSave: $("#autoSave"),
   saveBtn: $("#saveBtn"),
   helpLink: $("#helpLink"),
@@ -47,6 +48,7 @@ const DEFAULTS = {
   openaiModel: "qwen3.6-27b-ninfer",
   timeoutSec: 180,
   maxComments: 300,
+  redditPerThread: 30,
 };
 
 const RELEASES_PAGE = "https://github.com/nschoch/doxa/releases";
@@ -121,6 +123,7 @@ function bind() {
     els.youtubeApiKey,
     els.timeoutSec,
     els.maxComments,
+    els.redditPerThread,
   ].forEach((el) => {
     el.addEventListener("input", () => {
       if (els.autoSave.checked) saveSettings();
@@ -231,6 +234,7 @@ async function loadSettings() {
       "sites",
       "timeoutSec",
       "maxComments",
+      "redditPerThread",
     ]);
     els.provider.value = s.provider || DEFAULTS.provider;
     els.ollamaUrl.value = s.ollamaUrl || DEFAULTS.ollamaUrl;
@@ -252,6 +256,7 @@ async function loadSettings() {
     els.siteYoutube.checked = sites.includes("youtube");
     els.timeoutSec.value = s.timeoutSec || DEFAULTS.timeoutSec;
     els.maxComments.value = s.maxComments || DEFAULTS.maxComments;
+    els.redditPerThread.value = s.redditPerThread || DEFAULTS.redditPerThread;
   } catch (_) {
     els.ollamaUrl.value = DEFAULTS.ollamaUrl;
     els.model.value = DEFAULTS.model;
@@ -260,6 +265,7 @@ async function loadSettings() {
     els.openaiModel.value = DEFAULTS.openaiModel;
     els.timeoutSec.value = DEFAULTS.timeoutSec;
     els.maxComments.value = DEFAULTS.maxComments;
+    els.redditPerThread.value = DEFAULTS.redditPerThread;
   }
   updateVisibility();
 }
@@ -277,6 +283,7 @@ async function saveSettings() {
     sites: buildSites(),
     timeoutSec: Number(els.timeoutSec.value) || DEFAULTS.timeoutSec,
     maxComments: Number(els.maxComments.value) || DEFAULTS.maxComments,
+    redditPerThread: Number(els.redditPerThread.value) || DEFAULTS.redditPerThread,
   });
 }
 

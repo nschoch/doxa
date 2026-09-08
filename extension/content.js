@@ -30,9 +30,10 @@
   // Resets on each page load -> a refresh invalidates the cache (per user request).
   let _pageNonce = performance && performance.timeOrigin ? performance.timeOrigin : Date.now();
 
-  // Cache key: page + source type + provider/model + max, so a repeat click on the
-  // same page reuses the result, but changing provider/model or refreshing doesn't.
-  function makeKey(kind, provider, model, max) {
+  // Cache key: page + source type + provider/model + max + per-thread cap, so a
+  // repeat click on the same page reuses the result, but changing provider/model,
+  // the comment caps, or refreshing doesn't.
+  function makeKey(kind, provider, model, max, perThread) {
     return (
       location.origin +
       location.pathname +
@@ -45,6 +46,8 @@
       model +
       "|" +
       (Number(max) || 300) +
+      "|" +
+      (Number(perThread) || REDDIT_MAX_PER_THREAD) +
       "|" +
       _pageNonce
     );
@@ -80,6 +83,7 @@
       "sites",
       "timeoutSec",
       "maxComments",
+      "redditPerThread",
     ]);
   }
 
@@ -256,7 +260,9 @@
         ),
       );
     } else {
-      comments = collectComments();
+      // redditPerThread is a user setting ("Max comments per thread (Reddit)");
+      // fall back to the built-in default when it isn't configured yet.
+      comments = collectComments(s.redditPerThread);
     }
 
     if (!comments.length) {
@@ -270,7 +276,7 @@
     const slice = comments.slice(0, Number(s.maxComments) || 300);
     const provider = s.provider || "ollama";
     const model = resolveModel(provider, s);
-    const key = makeKey("comments", provider, model, s.maxComments);
+    const key = makeKey("comments", provider, model, s.maxComments, s.redditPerThread);
 
     // If we already summarized this exact page/content this page-load, reuse it.
     if (_cached && _cached.key === key) {
@@ -397,9 +403,9 @@
   }
 
   // --- comment extraction ---
-  function collectComments() {
+  function collectComments(redditPerThread) {
     const host = location.host;
-    if (host.includes("reddit.com")) return extractRedditComments();
+    if (host.includes("reddit.com")) return extractRedditComments(redditPerThread);
     if (host.includes("youtube.com")) return extractYoutubeComments();
     return [];
   }
@@ -436,11 +442,11 @@
   // as a contiguous run of shreddit-comment elements, so a plain DOM-order walk
   // returns entire threads back-to-back. One enormous off-topic top comment (a
   // tangent) can then fill the whole maxComments budget with its own replies and
-  // the summary ends up describing only that thread. Keep at most
-  // REDDIT_MAX_PER_THREAD comments per top-level thread ("20-30 comments per
-  // thread"): each thread's root always comes first in its run, so the
+  // the summary ends up describing only that thread. Keep at most N comments per
+  // top-level thread: each thread's root always comes first in its run, so the
   // most-voted comments still lead, but no single thread can crowd out the rest
-  // of the page.
+  // of the page. N is user-configurable ("Max comments per thread (Reddit)");
+  // REDDIT_MAX_PER_THREAD is the default when the setting is absent.
   const REDDIT_MAX_PER_THREAD = 30;
 
   // Walks shreddit-comment nodes in document order and keeps up to `perThread`
@@ -480,13 +486,13 @@
     return picked;
   }
 
-  function extractRedditComments() {
+  function extractRedditComments(redditPerThread) {
     const seen = new Set();
 
     const shreddit = document.querySelectorAll("shreddit-comment");
     if (shreddit.length) {
       const out = [];
-      for (const node of capRedditByThread(shreddit, REDDIT_MAX_PER_THREAD)) {
+      for (const node of capRedditByThread(shreddit, redditPerThread)) {
         const body = node.querySelector('div[slot="comment"]') || node;
         let t = (body.innerText || body.textContent || "").trim();
         t = t

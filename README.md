@@ -288,9 +288,11 @@ rate-limited to at most one GitHub API call every 6 hours per machine.
   pick a model to fill the model field.
 - **Timeout (seconds)** — how long to wait before failing. Bump to 300–600 if a
   large local model is slow. Default 180.
-- **Max comments** — cap on comments sent (keeps requests fast). On Reddit the
-  collector also keeps at most **30 comments per top-level thread**, so one
-  enormous off-topic thread can't crowd out the rest of the discussion.
+- **Max comments** — cap on comments sent (keeps requests fast).
+- **Max comments per thread (Reddit)** — how many comments each top-level Reddit
+  thread contributes (default 30), so one huge off-topic thread can't crowd out
+  the rest of the discussion. Raise it to sample deeper threads; set it near
+  **Max comments** to effectively disable the per-thread cap.
 - **Auto-save settings** — persists changes as you type.
 
 > **Privacy note:** Ollama and a custom local server keep everything on your LAN.

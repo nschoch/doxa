@@ -301,15 +301,6 @@ function activeModelInput() {
   return els.model;
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 async function fetchModels() {
   setStatus("info", "Fetching available models…");
   const provider = els.provider.value;
@@ -336,9 +327,9 @@ async function fetchModels() {
     setStatus("err", "No models returned.");
     return;
   }
-  els.modelsList.innerHTML = models
-    .map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
-    .join("");
+  const frag = document.createDocumentFragment();
+  for (const m of models) frag.appendChild(new Option(String(m), String(m)));
+  els.modelsList.replaceChildren(frag);
   els.modelsList.classList.remove("hidden");
   setStatus(
     "info",

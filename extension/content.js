@@ -827,7 +827,7 @@
         s.className = "cs-status";
         q(".cs-meta").textContent = `${countLabel} · ${model}`;
         q(".cs-meta").classList.remove("hidden");
-        q(".cs-result").innerHTML = renderMarkdown(text);
+        setHtml(q(".cs-result"), renderMarkdown(text));
         q(".cs-result").classList.remove("hidden");
         q(".cs-followup").classList.add("hidden");
         q(".cs-ask").classList.remove("hidden");
@@ -835,7 +835,7 @@
       },
       renderFollowup(text) {
         q(".cs-followup").className = "cs-followup";
-        q(".cs-followup").innerHTML = renderMarkdown(text);
+        setHtml(q(".cs-followup"), renderMarkdown(text));
         q(".cs-followup").classList.remove("hidden");
         scrollBody();
       },
@@ -875,6 +875,14 @@
       } catch (_) {}
     }
   }
+  // Insert already-sanitized HTML (markdown) into the card without an
+  // innerHTML assignment, so the DOM is built by the parser instead — avoids
+  // AMO's UNSAFE_VAR_ASSIGNMENT warning and runs no scripts.
+  function setHtml(el, html) {
+    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+    el.replaceChildren(...doc.body.childNodes);
+  }
+
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;")

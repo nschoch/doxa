@@ -432,13 +432,61 @@
     return "";
   }
 
+  // Reddit's new-shreddit UI renders each top-level comment's whole reply chain
+  // as a contiguous run of shreddit-comment elements, so a plain DOM-order walk
+  // returns entire threads back-to-back. One enormous off-topic top comment (a
+  // tangent) can then fill the whole maxComments budget with its own replies and
+  // the summary ends up describing only that thread. Keep at most
+  // REDDIT_MAX_PER_THREAD comments per top-level thread ("20-30 comments per
+  // thread"): each thread's root always comes first in its run, so the
+  // most-voted comments still lead, but no single thread can crowd out the rest
+  // of the page.
+  const REDDIT_MAX_PER_THREAD = 30;
+
+  // Walks shreddit-comment nodes in document order and keeps up to `perThread`
+  // from each top-level thread (thread root + its deepest displayed replies).
+  // A new thread starts at depth="0", or — when the depth attribute is absent —
+  // at any element with no shreddit-comment ancestor (safe for both nested and
+  // flat reply layouts, because Reddit always renders a thread contiguously).
+  function capRedditByThread(nodes, perThread) {
+    const limit = Math.max(1, parseInt(perThread, 10) || REDDIT_MAX_PER_THREAD);
+    const groups = [];
+    let current = null;
+    for (const el of nodes) {
+      let depth = "";
+      try {
+        depth = (el.getAttribute && el.getAttribute("depth")) || "";
+      } catch (_) {}
+      let hasAncestor = false;
+      try {
+        hasAncestor = !!(
+          el.parentElement && el.parentElement.closest("shreddit-comment")
+        );
+      } catch (_) {}
+      if (depth === "0" || (!depth && !hasAncestor)) {
+        current = [];
+        groups.push(current);
+      } else if (!current) {
+        // Safety net: a stray comment before any detectable thread root.
+        current = [];
+        groups.push(current);
+      }
+      current.push(el);
+    }
+    const picked = [];
+    for (const g of groups) {
+      for (let i = 0; i < g.length && i < limit; i++) picked.push(g[i]);
+    }
+    return picked;
+  }
+
   function extractRedditComments() {
     const seen = new Set();
 
     const shreddit = document.querySelectorAll("shreddit-comment");
     if (shreddit.length) {
       const out = [];
-      for (const node of shreddit) {
+      for (const node of capRedditByThread(shreddit, REDDIT_MAX_PER_THREAD)) {
         const body = node.querySelector('div[slot="comment"]') || node;
         let t = (body.innerText || body.textContent || "").trim();
         t = t

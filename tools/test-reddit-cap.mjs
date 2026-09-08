@@ -1,0 +1,167 @@
+// Regression test for the Reddit "per-thread cap" fix in extension/content.js.
+//
+// Bug: Reddit's shreddit UI renders each top-level comment's reply chain as a
+// contiguous run of shreddit-comment elements, so a plain DOM-order walk lets
+// one huge off-topic top thread fill the whole maxComments budget and the
+// summary describes only that tangent.
+//
+// Fix: capRedditByThread() keeps at most REDDIT_MAX_PER_THREAD comments per
+// top-level thread (thread root + its replies) while preserving DOM order.
+//
+// This runner extracts the REAL capRedditByThread function out of
+// extension/content.js and exercises it against fake DOM trees (nested and flat
+// reply layouts). Run:  node tools/test-reddit-cap.mjs
+//
+// Note: DOM *glue* (querySelectorAll order) is not covered here — verify once
+// in a live browser on a real thread.
+
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const src = readFileSync(path.join(root, "extension", "content.js"), "utf8");
+
+// Pull the real function out of the content script (it sits right before
+// extractRedditComments, so its end is unambiguous).
+const start = src.indexOf("function capRedditByThread");
+const end = src.indexOf("\n  function extractRedditComments", start);
+if (start === -1 || end === -1) {
+  console.error("Could not locate capRedditByThread in content.js");
+  process.exit(1);
+}
+const fnSource = src.slice(start, end);
+const context = { parseInt, Math };
+vm.createContext(context);
+vm.runInContext(`${fnSource}\n;globalThis.__cap = capRedditByThread;`, context);
+const cap = context.__cap;
+
+// --- tiny fake DOM ---
+function makeComment(depth, name) {
+  return {
+    tag: "shreddit-comment",
+    depth, // undefined => attribute absent
+    name,
+    parent: null,
+    children: [],
+    get parentElement() {
+      return this.parent;
+    },
+    getAttribute(n) {
+      return n === "depth" && this.depth !== undefined ? String(this.depth) : null;
+    },
+    closest(sel) {
+      // Real closest() includes the element itself; the extractor calls it on
+      // parentElement, so starting at `this` mirrors el.parentElement.closest().
+      let n = this;
+      while (n) {
+        if (n.tag === sel) return n;
+        n = n.parent;
+      }
+      return null;
+    },
+  };
+}
+function parentOf(el, p) {
+  el.parent = p;
+  if (p) p.children.push(el);
+  return el;
+}
+function docOrder(els) {
+  const out = [];
+  const walk = (list) => {
+    for (const e of list) {
+      out.push(e);
+      walk(e.children);
+    }
+  };
+  walk(els);
+  return out;
+}
+function addThread(threads, root, replies, replyDepthOf, nested) {
+  // Attach replies to the thread root. `nested: false` keeps them flat siblings
+  // (no shreddit-comment ancestor); `nested: true` hangs each new reply under
+  // the previous one (a shreddit-comment ancestor chain), like a deep thread.
+  threads.push(root);
+  for (let i = 0; i < replies; i++) {
+    const d = replyDepthOf ? replyDepthOf(i) : 1;
+    const parent = !nested || i === 0 ? root : root.children[root.children.length - 1];
+    parentOf(makeComment(d, `${root.name}/r${i}`), parent);
+  }
+}
+
+let failures = 0;
+function check(cond, label) {
+  if (cond) console.log(`  ok: ${label}`);
+  else {
+    failures++;
+    console.error(`FAIL: ${label}`);
+  }
+}
+
+// --- Scenario 1: nested layout, giant tangent top thread ---
+console.log("\nScenario 1 — nested layout; 400-reply off-topic tangent top thread");
+{
+  const threads = []; // top-level roots, in display order
+  const t1 = makeComment(0, "T1-tangent");
+  addThread(threads, t1, 400, (i) => 1 + (i % 4), true); // deep nested replies
+  const t2 = makeComment(0, "T2");
+  addThread(threads, t2, 6, null, true);
+  const t3 = makeComment(0, "T3");
+  addThread(threads, t3, 2, null, true);
+  for (let i = 4; i <= 40; i++) threads.push(makeComment(0, `T${i}`)); // lone roots
+
+  const picked = cap(docOrder(threads), 30);
+  const perThread = {};
+  for (const p of picked) perThread[p.name.split("/")[0]] = (perThread[p.name.split("/")[0]] || 0) + 1;
+
+  check(perThread["T1-tangent"] === 30, "tangent thread capped at 30 (had 400 replies)");
+  check(perThread.T2 === 7, "T2 keeps all 7 of its comments (under cap)");
+  check(perThread.T3 === 3, "T3 keeps all 3 of its comments (under cap)");
+  check(perThread.T4 === 1 && perThread.T40 === 1, "lone top-level roots each keep 1");
+  check(picked.length === 30 + 7 + 3 + 37, `total picked = ${picked.length} (expect 77)`);
+  check(picked[0].name === "T1-tangent" && picked[30].name === "T2", "tangent's own root leads, then next thread");
+  // Global maxComments=300 budget applied afterwards must no longer be tangent-only.
+  const slice300 = picked.slice(0, 300);
+  const tangentShare = slice300.filter((p) => p.name.startsWith("T1-tangent")).length;
+  check(tangentShare === 30, `of the 300-comment budget only ${tangentShare} come from the tangent`);
+}
+
+// --- Scenario 2: flat (non-nested) reply layout ---
+console.log("\nScenario 2 — flat sibling layout (replies follow their root, depth attr present)");
+{
+  const els = [];
+  const root = makeComment(0, "R1");
+  els.push(root);
+  for (let i = 0; i < 300; i++) els.push(makeComment(1, `R1/r${i}`)); // flat siblings
+  const root2 = makeComment(0, "R2");
+  els.push(root2);
+  for (let i = 0; i < 5; i++) els.push(makeComment(1, `R2/r${i}`));
+  const root3 = makeComment(0, "R3");
+  els.push(root3);
+
+  const picked = cap(els, 30);
+  check(picked.length === 37, `flat layout: 30 + 6 + 1 = ${picked.length} (expect 37)`);
+  check(picked[30].name === "R2", "after the capped R1 run, R2's thread starts");
+}
+
+// --- Scenario 3: no depth attributes anywhere (nested markup) ---
+console.log("\nScenario 3 — depth attribute absent; nested markup");
+{
+  const roots = [];
+  const r1 = makeComment(undefined, "noDepth-1");
+  roots.push(r1);
+  // nested replies without depth attrs (they have a shreddit-comment ancestor)
+  for (let i = 0; i < 50; i++) parentOf(makeComment(undefined, `noDepth-1/r${i}`), i === 0 ? r1 : r1.children[r1.children.length - 1]);
+  const r2 = makeComment(undefined, "noDepth-2");
+  roots.push(r2);
+
+  const picked = cap(docOrder(roots), 30);
+  const g1 = picked.filter((p) => p.name.startsWith("noDepth-1")).length;
+  const g2 = picked.filter((p) => p.name.startsWith("noDepth-2")).length;
+  check(g1 === 30 && g2 === 1 && picked.length === 31, `no-depth nested chain capped at 30 (got ${g1}), next root kept (${g2})`);
+}
+
+console.log(failures ? `\n${failures} FAILURE(S)` : "\nAll checks passed.");
+process.exit(failures ? 1 : 0);

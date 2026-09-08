@@ -1,4 +1,4 @@
-# Comment Summarizer (Ollama)
+# Doxa
 
 A cross-browser extension (Firefox + Safari) that summarizes **Reddit thread
 comments** and **YouTube video comments** using a **local Ollama** LLM. Nothing

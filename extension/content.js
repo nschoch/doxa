@@ -294,7 +294,14 @@
     }
 
     _meta = { countLabel: `${slice.length} comment(s)`, model };
-    _lastContext = { kind: "comments", text: slice.map((c) => c.text).join("\n\n"), host: location.host };
+    _lastContext = {
+      kind: "comments",
+      text: slice.map((c) => c.text).join("\n\n"),
+      host: location.host,
+      // permalink per sampled comment (index 0 = citation [1]), so the card can
+      // linkify "Sources" even when the model omits the (permalink) URL.
+      urls: slice.map((c) => c.url),
+    };
 
     card.status(`Summarizing ${slice.length} comment(s) with ${model}…`, "pending");
     const stopTicker = startTicker(card, `Summarizing ${slice.length} comment(s) with ${model}`);
@@ -947,7 +954,7 @@
         s.className = "cs-status";
         q(".cs-meta").textContent = `${countLabel} · ${model}`;
         q(".cs-meta").classList.remove("hidden");
-        setHtml(q(".cs-result"), renderMarkdown(text));
+        setHtml(q(".cs-result"), renderMarkdown(text, _lastContext && _lastContext.urls));
         q(".cs-result").classList.remove("hidden");
         q(".cs-followup").classList.add("hidden");
         q(".cs-ask").classList.remove("hidden");
@@ -955,7 +962,7 @@
       },
       renderFollowup(text) {
         q(".cs-followup").className = "cs-followup";
-        setHtml(q(".cs-followup"), renderMarkdown(text));
+        setHtml(q(".cs-followup"), renderMarkdown(text, _lastContext && _lastContext.urls));
         q(".cs-followup").classList.remove("hidden");
         scrollBody();
       },
@@ -1018,13 +1025,27 @@
     out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
     out = out.replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      /\[([^\]]+)\]\((https?:\/\/[^)"'\s]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener">$1</a>',
     );
     return out;
   }
 
-  function renderMarkdown(md) {
+  // Turns a numbered "Sources" citation into a link. If the model already wrote a
+  // markdown link ([permalink](url)) we leave it to inlineMd; otherwise we attach
+  // the permalink the extension actually collected for that comment number, so
+  // the sources stay clickable even when the model omits the URL.
+  function renderCite(line, commentUrls) {
+    const m = line.match(/^\[(\d+)\]\s*(.*)$/);
+    if (!m) return null;
+    if (/\[[^\]]+\]\(https?:\/\//.test(line)) return null; // model already linked it
+    const n = parseInt(m[1], 10);
+    const href = commentUrls && commentUrls[n - 1];
+    if (!href) return null;
+    return `<p><a href="${escapeHtml(href)}" target="_blank" rel="noopener">${inlineMd(line)}</a></p>`;
+  }
+
+  function renderMarkdown(md, commentUrls) {
     const lines = String(md || "").split(/\r?\n/);
     const out = [];
     let inList = null;
@@ -1066,6 +1087,12 @@
       if (bq) {
         closeList();
         out.push(`<blockquote>${inlineMd(bq[1])}</blockquote>`);
+        continue;
+      }
+      const cite = renderCite(line, commentUrls);
+      if (cite) {
+        closeList();
+        out.push(cite);
         continue;
       }
       closeList();

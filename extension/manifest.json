@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Doxa",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "AI comment & video summarizer for Reddit and YouTube. Runs on a local Ollama/ninfer server, or an external API like OpenRouter.",
   "browser_specific_settings": {
     "gecko": {
       "id": "comment-summarizer@local",
-      "strict_min_version": "128.0"
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["websiteContent"]
+      }
     }
   },
   "permissions": ["activeTab", "scripting", "storage"],

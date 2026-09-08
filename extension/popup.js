@@ -50,9 +50,11 @@ const DEFAULTS = {
 };
 
 const RELEASES_PAGE = "https://github.com/nschoch/doxa/releases";
+const README_URL = "https://github.com/nschoch/doxa";
 // Latest version we've shown the banner for (null until one is known).
 let lastKnownUpdateVersion = null;
 let lastKnownUpdateUrl = RELEASES_PAGE;
+let savedTimer = null;
 
 init();
 
@@ -70,7 +72,7 @@ async function init() {
 function bind() {
   els.summarizeBtn.addEventListener("click", doSummarize);
   els.geminiBtn.addEventListener("click", doGemini);
-  els.saveBtn.addEventListener("click", saveSettings);
+  els.saveBtn.addEventListener("click", onManualSave);
   els.fetchModelsBtn.addEventListener("click", fetchModels);
   els.viewReleaseBtn.addEventListener("click", openUpdateUrl);
   els.dismissUpdateBtn.addEventListener("click", dismissUpdate);
@@ -101,12 +103,9 @@ function bind() {
   });
   els.helpLink.addEventListener("click", (e) => {
     e.preventDefault();
-    setStatus(
-      "info",
-      "Ollama: run server with OLLAMA_ORIGINS=*, set its URL. OpenRouter: set a model + API key. " +
-        "Ninfer: set its URL + model (key optional on a local server). Raise Timeout if a large " +
-        "local model is slow. You can ask a follow-up in the card after a summary.",
-    );
+    browser.tabs
+      .create({ url: README_URL, active: true })
+      .catch(() => window.open(README_URL, "_blank"));
   });
   [
     els.ollamaUrl,
@@ -150,13 +149,15 @@ async function refreshButtonState() {
 
   const isReddit = host.includes("reddit.com");
   const isYoutube = host.includes("youtube.com");
-  // Ghost the YouTube site toggle until a Data API key is entered.
-  els.siteYoutube.disabled = !hasKey;
+  // The YouTube site toggle isn't gated on a Data API key: the Gemini hand-off
+  // needs no key, so a user can enable YouTube even before adding one.
   const redditOn = isReddit && sites.includes("reddit");
+  // Comment/transcript summarization on YouTube still needs the Data API key.
   const youtubeOn = isYoutube && sites.includes("youtube") && hasKey;
   const enabled = redditOn || youtubeOn;
 
-  // "Summarize with Gemini" appears on any YouTube video (hand-off; no key needed).
+  // "Summarize with Gemini" appears on any enabled YouTube video — it's a
+  // hand-off to Gemini in a new tab and needs no Data API key.
   const geminiVisible = isYoutube && sites.includes("youtube");
   els.geminiBtn.classList.toggle("hidden", !geminiVisible);
 
@@ -165,7 +166,10 @@ async function refreshButtonState() {
   if (enabled) {
     els.status.classList.add("hidden");
   } else if (isYoutube && sites.includes("youtube") && !hasKey) {
-    setStatus("info", "Add a YouTube Data API key in Settings to summarize this video.");
+    setStatus(
+      "info",
+      "Add a YouTube Data API key in Settings to summarize comments. (The Gemini button works without a key.)",
+    );
   } else {
     setStatus("info", "This site is disabled in Settings.");
   }
@@ -240,9 +244,30 @@ async function saveSettings() {
 function buildSites() {
   const sites = [];
   if (els.siteReddit.checked) sites.push("reddit");
-  // YouTube only counts as enabled once a Data API key is present.
-  if (els.siteYoutube.checked && els.youtubeApiKey.value.trim()) sites.push("youtube");
+  // YouTube is enabled by its checkbox alone (Gemini needs no Data API key);
+  // require the key where it's actually needed — the summarize path.
+  if (els.siteYoutube.checked) sites.push("youtube");
   return sites;
+}
+
+// Manual "Save settings" press: persist, then give immediate visual feedback
+// (the button flashes "Saved ✓"). Autosave calls saveSettings() directly and
+// doesn't flash, so per-keystroke saves don't get noisy.
+async function onManualSave() {
+  await saveSettings();
+  flashSaved();
+}
+
+function flashSaved() {
+  const btn = els.saveBtn;
+  if (!btn) return;
+  btn.textContent = "Saved ✓";
+  btn.classList.add("saved");
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => {
+    btn.textContent = "Save settings";
+    btn.classList.remove("saved");
+  }, 1500);
 }
 
 // --- Models ---

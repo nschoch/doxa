@@ -90,6 +90,16 @@ button.ghost:hover {
   background: #f6f8fa;
 }
 
+button.ghost:active {
+  transform: translateY(1px);
+}
+
+button.ghost.saved {
+  color: var(--success);
+  border-color: var(--success);
+  background: #ecfdf3;
+}
+
 .status {
   margin-top: 10px;
   padding: 8px 10px;

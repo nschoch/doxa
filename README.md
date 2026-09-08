@@ -32,6 +32,30 @@ Plus:
 - Optional: a **YouTube Data API key** to summarize YouTube comments
   (free from console.cloud.google.com → enable YouTube Data API v3).
 
+## 0. Get the code
+
+The project lives at **https://github.com/nschoch/doxa**. Grab it either way:
+
+**Option A — clone with git (best if you'll develop/edit it):**
+
+```bash
+git clone https://github.com/nschoch/doxa.git
+cd doxa
+```
+
+**Option B — download the zip (no git needed):** on the repo page click the green
+**Code** button → **Download ZIP**, then unzip it. (If you only want to install,
+use the `.xpi` attached to the latest [Releases](https://github.com/nschoch/doxa/releases)
+page instead of the source.)
+
+In both cases the folder you care about is **`extension/`** — that's the raw
+WebExtension you load into Firefox (or convert for Safari). Everything else
+(`Comment Summarizer/`, `derivedData/`, `*.xcodeproj`) is Safari/Xcode build
+output you can ignore.
+
+> To pick up updates later, `git pull` (Option A) or re-download a fresh zip
+> (Option B), then reload.
+
 ## 1. Set up Ollama (local provider)
 
 On the machine running Ollama, pull a model:
@@ -60,18 +84,68 @@ curl http://10.20.10.99:11434/api/chat -d '{
 }'
 ```
 
-## 2. Install in Firefox (fastest)
+## 2. Install in Firefox
+
+Firefox loads either a **temporary** add-on (dev) or a **Mozilla-signed `.xpi`**
+(permanent). Two routes:
+
+### 2a. Temporary install — fastest, for development
 
 1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on**.
-3. Select `extension/manifest.json` in this folder.
+3. Select `extension/manifest.json` in this folder (Firefox loads the whole
+   folder itself).
 4. Navigate to a Reddit thread or a YouTube video and click the extension's
-   toolbar icon.
+   toolbar icon (pin it from the puzzle-piece button if it isn't in the toolbar).
 
-The extension loads temporarily (until Firefox restarts). For a permanent
-install, zip the `extension/` folder and install it via
-`about:addons` → gear → **Install Add-on From File** (requires signing, or use
-Firefox Developer/Nightly with unsigned add-ons, or sign through Mozilla).
+This loads until Firefox restarts — repeat the 3 clicks next session. No account
+or signing required.
+
+### 2b. Permanent / signed install — for regular use
+
+Release Firefox only accepts **Mozilla-signed** add-ons, so to keep Doxa
+installed you need a signed `.xpi`. Signing goes through
+[addons.mozilla.org (AMO)](https://addons.mozilla.org/developers/).
+
+**Manifest requirements (already present in this repo):**
+
+- `browser_specific_settings.gecko.id` — a permanent add-on id
+  (`comment-summarizer@local`).
+- `browser_specific_settings.gecko.data_collection_permissions` — a
+  `{ "required": [...] }` array declaring the data the add-on collects/transmits.
+  This build declares `["websiteContent"]`. **AMO rejects new add-ons without
+  it.**
+- `browser_specific_settings.gecko.strict_min_version` — set to **142.0**, since
+  `data_collection_permissions` is only honored from Firefox 140+ (142 on
+  Android).
+
+**Sign it:**
+
+1. Create an AMO account and generate **API credentials** (issuer + secret) at
+   https://addons.mozilla.org/developers/addon/api/key/.
+2. Zip the **contents** of `extension/` so `manifest.json` sits at the zip root
+   (not wrapped in an `extension/` folder):
+   ```bash
+   cd extension && zip -r ../doxa-extension-<version>.zip . -x '.*'
+   ```
+3. Either upload that zip to AMO (**Submit a New Add-on** → choose **"On your
+   own"** → upload → download the signed `.xpi`), or sign from the CLI:
+   ```bash
+   npm i -g web-ext
+   web-ext sign --source-dir extension --channel unlisted \
+     --api-key <issuer> --api-secret <secret>
+   ```
+   Both produce a **signed `.xpi`** (e.g. `doxa-extension-<version>-an+fx.xpi`).
+4. Install it: `about:addons` → gear → **Install Add-on From File**, or drag the
+   `.xpi` onto the `about:addons` page.
+
+Because this is self-hosted ("on your own"), Firefox won't auto-update it; the
+extension's own **"Update available"** banner points at each new GitHub Release
+instead, so attach the fresh `.xpi` to every release.
+
+> **Just testing?** Firefox **Developer Edition / Nightly** can install unsigned
+> add-ons directly (set `xpinstall.signatures.required = false` in `about:config`),
+> so you can load the zipped folder without signing.
 
 ## 3. Convert for Safari
 
@@ -141,7 +215,8 @@ above is enough.
    - **Summarize with Gemini (open in tab)** — (on a YouTube video) opens a
      fresh `gemini.google.com` chat and **copies the prompt** ("Summarize this
      video: <url>") to your clipboard. Paste it (⌘V) and press Send. (Gemini
-     strips URL prompt params, so we can't auto-fill.)
+     strips URL prompt params, so we can't auto-fill.) This needs **no YouTube
+     Data API key** — it shows on any enabled YouTube video.
 3. The summary appears as an **on-page card** (bottom-right), so it keeps running
    even if you switch tabs or close the popup. Use **Copy** on the card.
 4. **Ask a follow-up** — after a summary, type a question in the card's
@@ -184,8 +259,10 @@ rate-limited to at most one GitHub API call every 6 hours per machine.
   the YouTube Data API key; it's the key for the summarization model.
 - **Sites** — checkboxes to enable **Reddit** and **YouTube**, plus a **YouTube
   Data API key** field right under the YouTube toggle. The extension only acts on
-  enabled sites (this stops Safari asking to access every website). YouTube
-  additionally requires a Data API key.
+  enabled sites (this stops Safari asking to access every website). On YouTube,
+  **Summarize comments** needs a Data API key, but **Summarize with Gemini** does
+  not — the Gemini button appears on any enabled YouTube video even before you add
+  a key.
 - **Fetch available models** — queries the active provider
   (Ollama `/api/tags`, or the OpenAI-compatible `/models` endpoint) and lets you
   pick a model to fill the model field.

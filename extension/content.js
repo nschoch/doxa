@@ -219,6 +219,25 @@
     return () => clearInterval(timer);
   }
 
+  // Shows an elapsed-seconds counter in the follow-up area while the follow-up
+  // request is with the LLM (so a slow model doesn't look frozen). Call it at
+  // the moment the request is dispatched; it returns a stop function.
+  function startAskTicker() {
+    const fu = cardEl && cardEl.querySelector(".cs-followup");
+    if (!fu) return () => {};
+    const t0 = Date.now();
+    let last = "";
+    const timer = setInterval(() => {
+      const n = Math.round((Date.now() - t0) / 1000);
+      const label = `Thinking… ${n}s`;
+      if (label !== last) {
+        last = label;
+        fu.textContent = label;
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }
+
   // --- comments summary ---
   // Drops the cached result and re-runs the current action (comments/transcript).
   function regenerate() {
@@ -416,6 +435,9 @@
     const provider = s.provider || "ollama";
     const model = resolveModel(provider, s);
     const user = buildFollowupPrompt(_lastContext.text, _lastSummary, q);
+    // Start counting only when the request is dispatched, so the counter reads
+    // as "elapsed since this question was sent to the LLM".
+    const stopTicker = startAskTicker();
     try {
       const r = await requestSummary({
         provider,
@@ -431,8 +453,10 @@
       else card.renderFollowupError("Error: " + ((r && r.error) || "Failed."));
     } catch (e) {
       card.renderFollowupError("Error: " + ((e && e.message) || String(e)));
+    } finally {
+      stopTicker();
+      card.askDone();
     }
-    card.askDone();
   }
 
   function buildPrompt(comments, host) {
@@ -889,6 +913,7 @@
       #cs-card .cs-copy, #cs-card .cs-regen, #cs-card .cs-ask-btn { font: inherit; color: #1f2328; }
       #cs-card .cs-followup { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #d0d7de; font-size: 13px; line-height: 1.5; }
       #cs-card .cs-followup.error { color: #dc2626; }
+      #cs-card .cs-followup.pending { color: #1e40af; }
       /* Markdown rendering */
       #cs-card .cs-result h1, #cs-card .cs-result h2, #cs-card .cs-result h3,
       #cs-card .cs-result h4, #cs-card .cs-result h5, #cs-card .cs-result h6 {
@@ -1002,6 +1027,11 @@
         const input = q(".cs-ask-input");
         input.placeholder = "Asking…";
         input.disabled = true;
+        // Show the in-flight counter here; startAskTicker() updates the text.
+        const fu = q(".cs-followup");
+        fu.className = "cs-followup pending";
+        fu.textContent = "Thinking…";
+        fu.classList.remove("hidden");
       },
       askDone() {
         const input = q(".cs-ask-input");

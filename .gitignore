@@ -13,5 +13,8 @@ DerivedData/
 .env.*
 *.local
 
+# built release artifact (attached to GitHub Releases, not committed)
+doxa-extension-*.zip
+
 # local work-state memo (not part of the deliverable)
 PROGRESS.md

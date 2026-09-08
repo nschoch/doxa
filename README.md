@@ -6,11 +6,10 @@ leaves your machine. Click the toolbar button on a Reddit thread or a YouTube
 video and it reads the comments, summarizes them, and shows you a structured
 TL;DR.
 
-```
-┌────────────┐   collect    ┌──────────────┐   POST /api/chat   ┌───────────┐
-│   popup    │──────────────▶│  content.js  │     background.js   │  Ollama   │
-│ (button+UI)│  tabs.sendMsg │  (reads DOM) │────▶ localhost:11434│ (local LLM)│
-└────────────┘               └──────────────┘                    └───────────┘
+```mermaid
+flowchart LR
+    P["popup (button + UI)"] -->|"collect / tabs.sendMsg"| C["content.js (reads DOM)"]
+    C -->|"POST /api/chat via background.js to localhost:11434"| O["Ollama (local LLM)"]
 ```
 
 ## Requirements

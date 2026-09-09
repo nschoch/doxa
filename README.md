@@ -164,7 +164,7 @@ install it from the App Store, then in Terminal run:
 > folder that contains `extension/`:
 
 ```bash
-xcrun safari-web-extension-converter --app-name "Comment Summarizer" --bundle-identifier com.example.commentsummarizer --macos-only --force extension/
+xcrun safari-web-extension-converter --app-name "Comment Summarizer" --bundle-identifier com.theschochs.doxa --macos-only --force extension/
 ```
 
 > Gotchas:
@@ -212,12 +212,29 @@ That generates an Xcode project. Then:
 > can disable an unsigned extension. Re-check **Develop → Allow Unsigned
 > Extensions**, then toggle it on again in Settings.
 
-### Install on another Mac / device
+### Distribute (other people's Macs)
 
-To actually *distribute* it you must sign and notarize the container app via
-your Apple Developer account (even a free one can't ship a standalone
-extension). For personal single-Mac use, the unsigned develop-and-run flow
-above is enough.
+To actually *distribute* it, the container app must be signed with a **paid**
+Apple Developer Program account (a free personal team only runs on your own
+Mac). Two routes — this project ships both, direct download first:
+
+- **Direct download (fastest, no review):** sign the container app with a
+  **Developer ID Application** certificate, then **Product → Archive → Distribute
+  App → Direct Distribution** in Xcode — this signs, notarizes, and staples
+  automatically. Wrap the exported app in a DMG and attach it to a GitHub
+  Release. Users download, open the app once, then enable it under
+  Safari → Settings → Extensions. No "Allow Unsigned Extensions" toggle needed
+  for a notarized build.
+- **Mac App Store (auto-updates + widest reach):** register the same bundle ID in
+  App Store Connect, sign with an **Apple Distribution** certificate
+  (Archive → Distribute App → App Store Connect), distribute a beta via
+  TestFlight, then submit for review.
+
+The Xcode project uses bundle id `com.theschochs.doxa` (+ `.Extension` for the
+extension target) and targets macOS 13+. **Don't change the bundle id after the
+first public release** — it's locked to the App Store record and installed
+copies. For personal single-Mac use, the unsigned develop-and-run flow above is
+enough.
 
 ## Usage
 

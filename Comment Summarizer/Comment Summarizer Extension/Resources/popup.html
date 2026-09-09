@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Doxa</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Doxa</h1>
+      <p class="subtitle">AI comment &amp; video summarizer</p>
+    </header>
+
+    <main>
+      <div id="updateBanner" class="update hidden">
+        <div class="update-text">
+          <strong>Update available</strong>
+          <span id="updateDetail"></span>
+        </div>
+        <div class="update-actions">
+          <button id="viewReleaseBtn" class="update-cta">View release</button>
+          <button id="dismissUpdateBtn" class="update-dismiss" title="Dismiss for this version">×</button>
+        </div>
+      </div>
+
+      <button id="summarizeBtn" class="primary">Summarize comments</button>
+      <button id="geminiBtn" class="ghost wide gemini hidden">Summarize YouTube video with Gemini (open in new tab)</button>
+      <p class="hint">The result appears as a card on the page, so you can keep browsing.</p>
+
+      <div id="status" class="status hidden"></div>
+      <p id="insecureWarn" class="warn hidden"></p>
+    </main>
+
+    <details id="settings" class="settings">
+      <summary>Settings</summary>
+
+      <label>
+        Provider
+        <select id="provider">
+          <option value="ollama">Ollama (local)</option>
+          <option value="openai">OpenAI-compatible</option>
+        </select>
+      </label>
+
+      <div id="ollamaGroup">
+        <label>
+          Ollama URL
+          <input id="ollamaUrl" type="text" placeholder="http://localhost:11434" />
+        </label>
+        <label>
+          Ollama model
+          <input id="model" type="text" placeholder="qwen3.6:35b-a3b" />
+        </label>
+      </div>
+
+      <div id="openaiGroup" class="hidden">
+        <label>
+          Preset
+          <select id="openaiPreset">
+            <option value="custom">Custom (any OpenAI-compatible server)</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
+        </label>
+        <label>
+          Base URL
+          <input id="openaiBaseUrl" type="text" placeholder="http://localhost:8000/v1" />
+        </label>
+        <label>
+          Model
+          <input id="openaiModel" type="text" placeholder="openai/gpt-4o-mini" />
+        </label>
+      </div>
+
+      <label id="apiKeyGroup" class="hidden">
+        LLM API key (required for OpenRouter; optional for a custom server)
+        <input id="apiKey" type="password" placeholder="sk-or-… / (blank for a local server)" />
+      </label>
+
+      <div class="model-actions">
+        <button id="fetchModelsBtn" class="ghost">Fetch available models</button>
+        <select id="modelsList" class="hidden"></select>
+      </div>
+
+      <div class="settings-group">
+        <span class="group-label">Sites</span>
+        <label class="check">
+          <input id="siteReddit" type="checkbox" checked />
+          Reddit
+        </label>
+        <label class="check">
+          <input id="siteYoutube" type="checkbox" checked />
+          YouTube (summarize needs API key)
+        </label>
+        <label>
+          YouTube Data API key
+          <input id="youtubeApiKey" type="password" placeholder="AIza…" />
+        </label>
+      </div>
+
+      <label>
+        Timeout (seconds)
+        <input id="timeoutSec" type="number" min="10" max="900" />
+      </label>
+
+      <label>
+        Max comments to send
+        <input id="maxComments" type="number" min="1" max="2000" />
+      </label>
+
+      <label>
+        Max comments per thread (Reddit)
+        <input id="redditPerThread" type="number" min="1" max="2000" />
+      </label>
+
+      <label>
+        Max reply depth (Reddit)
+        <select id="redditMaxDepth">
+          <option value="">No limit (default)</option>
+          <option value="0">Top-level comments only</option>
+          <option value="1">1 reply level</option>
+          <option value="2">2 reply levels</option>
+          <option value="3">3 reply levels</option>
+          <option value="4">4 reply levels</option>
+          <option value="5">5 reply levels</option>
+          <option value="6">6 reply levels</option>
+          <option value="8">8 reply levels</option>
+          <option value="10">10 reply levels</option>
+        </select>
+      </label>
+      <p class="hint">
+        On Reddit, per-thread caps stop one huge off-topic thread from crowding
+        out the rest of the discussion: "Max comments per thread" bounds each
+        thread's size (default 30), and "Max reply depth" stops the sample from
+        diving deep into nested reply chains (no limit by default).
+      </p>
+
+      <label class="check">
+        <input id="autoSave" type="checkbox" checked />
+        Save settings automatically
+      </label>
+      <button id="saveBtn" class="ghost">Save settings</button>
+    </details>
+
+    <footer>
+      <span id="versionLabel" class="version"></span>
+      <a href="#" id="helpLink" title="Open the Doxa README for setup instructions">Setup help</a>
+      <a href="#" id="checkUpdatesLink">Check for updates</a>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

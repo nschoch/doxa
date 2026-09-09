@@ -1,9 +1,8 @@
 # build / generated output
 derivedData/
-Comment Summarizer/
-*.xcodeproj/
-xcuserdata/
 DerivedData/
+xcuserdata/
+*.pbxproj.bak
 
 # OS clutter
 .DS_Store
@@ -13,6 +12,7 @@ DerivedData/
 .env.*
 *.local
 doxa-amo.env
+*.p8
 
 # built release artifact (attached to GitHub Releases, not committed)
 doxa-extension-*.zip

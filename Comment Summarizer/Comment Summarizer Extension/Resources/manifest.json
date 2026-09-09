@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Doxa",
+  "version": "1.0.9",
+  "description": "AI comment & video summarizer for Reddit and YouTube. Runs on a local Ollama, or any OpenAI-compatible server (custom or OpenRouter).",
+  "homepage_url": "https://github.com/nschoch/doxa",
+  "developer": {
+    "name": "Nick Schoch",
+    "url": "https://github.com/nschoch"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "comment-summarizer@local",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["websiteContent"]
+      }
+    }
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "*://*.reddit.com/*",
+    "*://*.youtube.com/*",
+    "http://*/*",
+    "https://openrouter.ai/*",
+    "https://www.googleapis.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Summarize comments"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.reddit.com/*",
+        "*://*.youtube.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "48": "icons/icon48.png",
+    "96": "icons/icon96.png",
+    "128": "icons/icon128.png"
+  }
+}

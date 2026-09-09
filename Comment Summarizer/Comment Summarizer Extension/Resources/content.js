@@ -1,0 +1,1104 @@
+// Content script for Doxa.
+// Injected into Reddit and YouTube pages. It:
+//   - collects loaded comments (Reddit/YouTube), auto-scrolling YouTube first,
+//   - shows an on-page card that renders the summary as formatted Markdown,
+//   - lets the user ask a follow-up question (grounded in the same source),
+//   - proxies requests to the background worker over a long-lived port.
+
+(() => {
+  "use strict";
+
+  const SYSTEM_PROMPT = [
+    "You are a precise assistant that summarizes comment sections.",
+    "Write a concise, well-structured summary in Markdown.",
+    "Capture the overall consensus, the main points, and where people disagree.",
+    "Include notable or frequently-repeated comments and any clear 'camps'.",
+    "Be neutral, do not invent details, and stay under ~250 words.",
+  ].join(" ");
+
+  const FOLLOWUP_SYSTEM_PROMPT = [
+    "You are answering a follow-up question about content that was already summarized.",
+    "Answer using ONLY the provided content. Do not invent facts.",
+    "Be concise, direct, and use Markdown for structure if helpful.",
+  ].join(" ");
+
+  // --- state ---
+  let _meta = { countLabel: "", model: "" };
+  let _lastContext = null; // { kind: 'comments', text, host }
+  let _lastSummary = "";
+  let _cached = null; // last result for this page load, so repeat clicks reuse it
+  // Resets on each page load -> a refresh invalidates the cache (per user request).
+  let _pageNonce = performance && performance.timeOrigin ? performance.timeOrigin : Date.now();
+
+  // Cache key: page + source type + provider/model + max + per-thread cap, so a
+  // repeat click on the same page reuses the result, but changing provider/model,
+  // the comment caps, or refreshing doesn't.
+  function makeKey(kind, provider, model, max, perThread, maxDepth) {
+    return (
+      location.origin +
+      location.pathname +
+      location.search +
+      "|" +
+      kind +
+      "|" +
+      provider +
+      "|" +
+      model +
+      "|" +
+      (Number(max) || 300) +
+      "|" +
+      (Number(perThread) || REDDIT_MAX_PER_THREAD) +
+      "|" +
+      (maxDepth === undefined || maxDepth === null || maxDepth === ""
+        ? "all"
+        : String(maxDepth)) +
+      "|" +
+      _pageNonce
+    );
+  }
+
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && message.type === "collect") {
+      const comments = collectComments();
+      sendResponse({ ok: true, host: location.host, count: comments.length, comments });
+      return;
+    }
+    if (message && message.type === "start") {
+      startSummary();
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message && message.type === "ping") {
+      sendResponse({ ok: true, host: location.host });
+      return;
+    }
+  });
+
+  function getSettings() {
+    return browser.storage.local.get([
+      "provider",
+      "model",
+      "openaiPreset",
+      "openaiBaseUrl",
+      "openaiModel",
+      "ollamaUrl",
+      "apiKey",
+      "youtubeApiKey",
+      "sites",
+      "timeoutSec",
+      "maxComments",
+      "redditPerThread",
+      "redditMaxDepth",
+    ]);
+  }
+
+  function isSiteEnabled(s) {
+    const host = location.host;
+    const sites = Array.isArray(s.sites) ? s.sites : ["reddit", "youtube"];
+    if (host.includes("reddit.com")) return sites.includes("reddit");
+    if (host.includes("youtube.com")) return sites.includes("youtube");
+    return false;
+  }
+
+  function getVideoId() {
+    try {
+      return new URL(location.href).searchParams.get("v") || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  // Fetches comments via the YouTube Data API v3 (reliable; not blocked by
+  // closed shadow DOM / lazy loading). Requires a YouTube Data API key.
+  // On YouTube: prefer the Data API (fetched via the background port, so CORS is
+  // handled); otherwise fall back to auto-scroll DOM scraping.
+  async function getYoutubeComments(s, onProgress) {
+    const videoId = getVideoId();
+    if (s.youtubeApiKey && videoId) {
+      try {
+        const r = await fetchCommentsViaBackground(
+          s.youtubeApiKey,
+          videoId,
+          Number(s.maxComments) || 300,
+        );
+        if (r && r.ok && r.comments && r.comments.length)
+          return r.comments.map((c) => ({ text: c, url: "" }));
+      } catch (_) {
+        /* fall through to DOM scraping */
+      }
+    }
+    return ensureYoutubeComments(Number(s.maxComments) || 300, 25, onProgress);
+  }
+
+  function resolveModel(provider, s) {
+    if (provider === "openai") return s.openaiModel || "qwen3.6-27b-ninfer";
+    return s.model || "qwen3.6:35b-a3b";
+  }
+
+  // Base URL for the OpenAI-compatible provider; OpenRouter is a fixed preset.
+  function resolveBaseUrl(provider, s) {
+    if (provider !== "openai") return "";
+    if (s.openaiPreset === "openrouter") return "https://openrouter.ai/api/v1";
+    return s.openaiBaseUrl || "http://localhost:8000/v1";
+  }
+
+  // Runs a request over the long-lived "summarize" port; resolves with the first
+  // message the background sends back.
+  function portRequest(payload) {
+    return new Promise((resolve) => {
+      let port;
+      let settled = false;
+      try {
+        port = browser.runtime.connect({ name: "summarize" });
+      } catch (e) {
+        resolve({ ok: false, error: String((e && e.message) || e) });
+        return;
+      }
+      port.onMessage.addListener((msg) => {
+        settled = true;
+        try {
+          port.disconnect();
+        } catch (_) {}
+        resolve(msg || { ok: false, error: "No response." });
+      });
+      port.onDisconnect.addListener(() => {
+        if (!settled) {
+          resolve({
+            ok: false,
+            error: "The background connection closed before a result arrived.",
+          });
+        }
+      });
+      try {
+        port.postMessage(payload);
+      } catch (e) {
+        resolve({ ok: false, error: String((e && e.message) || e) });
+      }
+    });
+  }
+
+  function requestSummary(cfg) {
+    return portRequest({
+      type: "summarize",
+      provider: cfg.provider,
+      system: cfg.system,
+      user: cfg.user,
+      model: cfg.model,
+      ollamaUrl: cfg.ollamaUrl,
+      baseUrl: cfg.baseUrl,
+      apiKey: cfg.apiKey,
+      requireKey: !!cfg.requireKey,
+      timeoutSec: cfg.timeoutSec,
+    });
+  }
+
+  function fetchCommentsViaBackground(apiKey, videoId, maxResults) {
+    return portRequest({
+      type: "youtube-comments",
+      apiKey,
+      videoId,
+      maxResults,
+    });
+  }
+
+  // Shows an elapsed-seconds counter in the card while a request is running.
+  function startTicker(card, baseMsg) {
+    const t0 = Date.now();
+    let last = "";
+    const timer = setInterval(() => {
+      const n = Math.round((Date.now() - t0) / 1000);
+      const label = `${baseMsg} ${n}s`;
+      if (label !== last) {
+        last = label;
+        card.status(label, "pending");
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }
+
+  // Shows an elapsed-seconds counter in the follow-up area while the follow-up
+  // request is with the LLM (so a slow model doesn't look frozen). Call it at
+  // the moment the request is dispatched; it returns a stop function.
+  function startAskTicker() {
+    const fu = cardEl && cardEl.querySelector(".cs-followup");
+    if (!fu) return () => {};
+    const t0 = Date.now();
+    let last = "";
+    const timer = setInterval(() => {
+      const n = Math.round((Date.now() - t0) / 1000);
+      const label = `Thinking… ${n}s`;
+      if (label !== last) {
+        last = label;
+        fu.textContent = label;
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }
+
+  // --- comments summary ---
+  // Drops the cached result and re-runs the summary.
+  function regenerate() {
+    _cached = null;
+    startSummary();
+  }
+
+  async function startSummary() {
+    const card = ensureCard();
+    const s = await getSettings();
+    const isYoutube = location.host.includes("youtube.com");
+    if (!isSiteEnabled(s)) {
+      card.status("This site isn't enabled in Settings. Enable it under Settings → Sites.", "error");
+      return;
+    }
+    if (isYoutube && !s.youtubeApiKey) {
+      card.status("Add a YouTube Data API key in Settings to summarize comments on YouTube.", "error");
+      return;
+    }
+
+    let comments;
+    if (isYoutube) {
+      card.status("Loading comments…", "pending");
+      comments = await getYoutubeComments(s, (count) =>
+        card.status(
+          count > 0 ? `Loading comments… ${count} loaded` : "Loading comments… (auto-scroll)",
+          "pending",
+        ),
+      );
+    } else {
+      // redditPerThread / redditMaxDepth are user settings ("Max comments per
+      // thread (Reddit)" / "Max reply depth (Reddit)"); fall back to the
+      // built-in defaults when they aren't configured yet.
+      comments = collectComments(s.redditPerThread, s.redditMaxDepth);
+    }
+
+    if (!comments.length) {
+      card.status(
+        "No comments found. On YouTube, scroll down to load comments first, then click Summarize again.",
+        "error",
+      );
+      return;
+    }
+
+    const slice = comments.slice(0, Number(s.maxComments) || 300);
+    const provider = s.provider || "ollama";
+    const model = resolveModel(provider, s);
+    const key = makeKey("comments", provider, model, s.maxComments, s.redditPerThread, s.redditMaxDepth);
+
+    // If we already summarized this exact page/content this page-load, reuse it.
+    if (_cached && _cached.key === key) {
+      _meta = { countLabel: _cached.count, model };
+      _lastContext = _cached.context;
+      _lastSummary = _cached.summary;
+      card.result(_cached.summary, _cached.count, model);
+      return;
+    }
+
+    _meta = { countLabel: `${slice.length} comment(s)`, model };
+    _lastContext = {
+      kind: "comments",
+      text: slice.map((c) => c.text).join("\n\n"),
+      host: location.host,
+      // permalink per sampled comment (index 0 = citation [1]), so the card can
+      // linkify "Sources" even when the model omits the (permalink) URL.
+      urls: slice.map((c) => c.url),
+    };
+
+    card.status(`Summarizing ${slice.length} comment(s) with ${model}…`, "pending");
+    const stopTicker = startTicker(card, `Summarizing ${slice.length} comment(s) with ${model}`);
+
+    const r = await requestSummary({
+      provider,
+      system: SYSTEM_PROMPT,
+      user: buildPrompt(slice, location.host),
+      model,
+      ollamaUrl: s.ollamaUrl,
+      baseUrl: resolveBaseUrl(provider, s),
+      apiKey: s.apiKey,
+      requireKey: provider === "openai" && s.openaiPreset === "openrouter",
+      timeoutSec: s.timeoutSec,
+    });
+    stopTicker();
+
+    if (r && r.ok) {
+      _lastSummary = r.summary;
+      _cached = { key, summary: r.summary, count: _meta.countLabel, model, context: _lastContext };
+      card.result(r.summary, _meta.countLabel, model);
+    } else {
+      card.status("Error: " + ((r && r.error) || "Summarization failed."), "error");
+    }
+  }
+
+  // --- follow-up ---
+  async function askFollowup() {
+    const card = ensureCard();
+    const input = cardEl.querySelector(".cs-ask-input");
+    const q = ((input && input.value) || "").trim();
+    if (!q) return;
+    if (!_lastContext) {
+      card.renderFollowupError("Nothing to ask about yet. Summarize a page first.");
+      return;
+    }
+    card.askPending();
+    const s = await getSettings();
+    const provider = s.provider || "ollama";
+    const model = resolveModel(provider, s);
+    const user = buildFollowupPrompt(_lastContext.text, _lastSummary, q);
+    // Start counting only when the request is dispatched, so the counter reads
+    // as "elapsed since this question was sent to the LLM".
+    const stopTicker = startAskTicker();
+    try {
+      const r = await requestSummary({
+        provider,
+        system: FOLLOWUP_SYSTEM_PROMPT,
+        user,
+        model,
+        ollamaUrl: s.ollamaUrl,
+        baseUrl: resolveBaseUrl(provider, s),
+        apiKey: s.apiKey,
+        requireKey: provider === "openai" && s.openaiPreset === "openrouter",
+        timeoutSec: s.timeoutSec,
+      });
+      if (r && r.ok) card.renderFollowup(r.summary);
+      else card.renderFollowupError("Error: " + ((r && r.error) || "Failed."));
+    } catch (e) {
+      card.renderFollowupError("Error: " + ((e && e.message) || String(e)));
+    } finally {
+      stopTicker();
+      card.askDone();
+    }
+  }
+
+  function buildPrompt(comments, host) {
+    const numbered = comments
+      .map((c, i) => {
+        const base = `${i + 1}. ${c.text}`;
+        return c.url ? `${base}  (permalink: ${c.url})` : base;
+      })
+      .join("\n");
+    return [
+      `Please summarize the comments from a page on ${host}.`,
+      "",
+      "Write the summary in the SAME language as most of the comments (use English if mixed).",
+      "",
+      "Use this structure:",
+      "### TL;DR",
+      "- One or two sentences on what the discussion is about.",
+      "### Main points",
+      "- 3-6 bullets on the most common or important points.",
+      "### Consensus vs. disagreement",
+      "- What most commenters agree on, and what splits them into camps.",
+      "### Sources",
+      "- Cite the comments you actually referenced as numbered Markdown links,",
+      "  e.g. `[1] [brief label](permalink)`.",
+      "- Use only the permalinks provided above; never invent a URL.",
+      "- If no comment is specifically referenced, you may omit this section.",
+      "",
+      "Comments:",
+      numbered,
+    ].join("\n");
+  }
+
+  function buildFollowupPrompt(sourceText, summary, question) {
+    const capped =
+      sourceText.length > 120000 ? sourceText.slice(0, 120000) + "\n…(truncated)" : sourceText;
+    return [
+      "Here is the source content that was summarized:",
+      "----",
+      capped,
+      "----",
+      summary ? "Here is the summary that was produced:\n" + summary + "\n----" : "",
+      `Question: ${question}`,
+      "",
+      "Answer the question based only on the source content above.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  // --- comment extraction ---
+  function collectComments(redditPerThread, redditMaxDepth) {
+    const host = location.host;
+    if (host.includes("reddit.com")) {
+      return extractRedditComments(redditPerThread, redditMaxDepth);
+    }
+    if (host.includes("youtube.com")) return extractYoutubeComments();
+    return [];
+  }
+
+  function dedupe(list) {
+    const seen = new Set();
+    const out = [];
+    for (const item of list) {
+      const obj = typeof item === "string" ? { text: item, url: "" } : item;
+      const t = String(obj.text || "").trim();
+      if (t && t.length > 3 && !seen.has(t)) {
+        seen.add(t);
+        out.push({ text: t, url: obj.url || "" });
+      }
+    }
+    return out;
+  }
+
+  function redditPermalink(node) {
+    try {
+      const p = node.getAttribute ? node.getAttribute("permalink") : "";
+      if (p) return p.startsWith("/") ? "https://www.reddit.com" + p : p;
+      const a = node.querySelector
+        ? node.querySelector('a[href*="/comment/"]')
+        : null;
+      if (a && a.href) return a.href;
+      const cl = node.querySelector ? node.querySelector(".permalink") : null;
+      if (cl && cl.href) return cl.href;
+    } catch (_) {}
+    return "";
+  }
+
+  // Reddit's new-shreddit UI renders each top-level comment's whole reply chain
+  // as a contiguous run of shreddit-comment elements, so a plain DOM-order walk
+  // returns entire threads back-to-back. One enormous off-topic top comment (a
+  // tangent) can then fill the whole maxComments budget with its own replies and
+  // the summary ends up describing only that thread. Keep at most N comments per
+  // top-level thread: each thread's root always comes first in its run, so the
+  // most-voted comments still lead, but no single thread can crowd out the rest
+  // of the page. N is user-configurable ("Max comments per thread (Reddit)");
+  // REDDIT_MAX_PER_THREAD is the default when the setting is absent.
+  const REDDIT_MAX_PER_THREAD = 30;
+
+  // Resolves the "Max reply depth (Reddit)" setting: how many reply levels under
+  // each top-level comment to include (0 = top-level comments only). null/absent
+  // => no depth limit (previous behavior).
+  function redditDepthLimit(maxDepth) {
+    if (maxDepth === undefined || maxDepth === null || maxDepth === "") return null;
+    const n = parseInt(maxDepth, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
+  // Reply level of a comment inside its thread: 0 = the thread's own top-level
+  // comment. Trusts the depth attribute when present (shreddit ships depth="0"
+  // for top-level comments, incrementing per reply level); otherwise counts the
+  // shreddit-comment ancestors inside the thread (nested markup without attrs).
+  function redditReplyDepth(el, threadRoot) {
+    if (!el || el === threadRoot) return 0;
+    let attr = "";
+    try {
+      attr = (el.getAttribute && el.getAttribute("depth")) || "";
+    } catch (_) {}
+    if (/^\d+$/.test(attr)) return parseInt(attr, 10);
+    let level = 0;
+    try {
+      let p = el.parentElement;
+      while (p) {
+        const isComment = (p.tagName || "").toLowerCase() === "shreddit-comment";
+        if (isComment || p === threadRoot) level++;
+        if (p === threadRoot) break;
+        p = p.parentElement;
+      }
+    } catch (_) {}
+    return level;
+  }
+
+  // Walks shreddit-comment nodes in document order and keeps at most `perThread`
+  // comments from each top-level thread, skipping replies deeper than `maxDepth`
+  // (both user-configurable). A new thread starts at depth="0", or — when the
+  // depth attribute is absent — at any element with no shreddit-comment ancestor
+  // (safe for both nested and flat reply layouts, because Reddit always renders
+  // a thread contiguously).
+  function capRedditByThread(nodes, perThread, maxDepth) {
+    const limit = Math.max(1, parseInt(perThread, 10) || REDDIT_MAX_PER_THREAD);
+    const depthLimit = redditDepthLimit(maxDepth);
+    const groups = [];
+    let current = null;
+    for (const el of nodes) {
+      let depth = "";
+      try {
+        depth = (el.getAttribute && el.getAttribute("depth")) || "";
+      } catch (_) {}
+      let hasAncestor = false;
+      try {
+        hasAncestor = !!(
+          el.parentElement && el.parentElement.closest("shreddit-comment")
+        );
+      } catch (_) {}
+      if (depth === "0" || (!depth && !hasAncestor)) {
+        current = [];
+        groups.push(current);
+      } else if (!current) {
+        // Safety net: a stray comment before any detectable thread root.
+        current = [];
+        groups.push(current);
+      }
+      current.push(el);
+    }
+    const picked = [];
+    for (const g of groups) {
+      const root = g[0];
+      let kept = 0;
+      for (const el of g) {
+        if (depthLimit !== null && redditReplyDepth(el, root) > depthLimit) {
+          continue; // too deep for this thread — skip, don't spend budget
+        }
+        picked.push(el);
+        kept++;
+        if (kept >= limit) break;
+      }
+    }
+    return picked;
+  }
+
+  function extractRedditComments(redditPerThread, redditMaxDepth) {
+    const seen = new Set();
+
+    const shreddit = document.querySelectorAll("shreddit-comment");
+    if (shreddit.length) {
+      const out = [];
+      for (const node of capRedditByThread(shreddit, redditPerThread, redditMaxDepth)) {
+        const body = node.querySelector('div[slot="comment"]') || node;
+        let t = (body.innerText || body.textContent || "").trim();
+        t = t
+          .replace(/\bExpand\b/g, "")
+          .replace(/\bMore replies\b/g, "")
+          .replace(/\bShare\b/g, "")
+          .replace(/\bSave\b/g, "")
+          .replace(/\bReport\b/g, "")
+          .trim();
+        if (t && t.length > 3 && !seen.has(t)) {
+          seen.add(t);
+          out.push({ text: t, url: redditPermalink(node) });
+        }
+      }
+      if (out.length) return out;
+    }
+
+    const dt = document.querySelectorAll('[data-testid="comment"]');
+    if (dt.length) {
+      const out = [];
+      for (const node of dt) {
+        const body = node.querySelector("div[slot='comment'], .md, p") || node;
+        const t = (body.innerText || body.textContent || "").trim();
+        if (t && t.length > 3 && !seen.has(t)) {
+          seen.add(t);
+          out.push({ text: t, url: redditPermalink(node) });
+        }
+      }
+      if (out.length) return out;
+    }
+
+    const old = document.querySelectorAll(
+      ".commentarea .comment .entry .md, .commentarea .comment > .entry",
+    );
+    const out = [];
+    for (const node of old) {
+      const t = (node.innerText || node.textContent || "").trim();
+      if (t && t.length > 3 && !seen.has(t)) {
+        seen.add(t);
+        out.push({ text: t, url: redditPermalink(node) });
+      }
+    }
+    return out;
+  }
+
+  // YouTube renders its comment components inside (open) shadow roots, which a
+  // normal document.querySelectorAll won't reach. Walk into shadow roots to find
+  // the comment hosts.
+  function allShadowMatches(selector) {
+    const found = [];
+    const walk = (r) => {
+      if (!r || !r.querySelectorAll) return;
+      try {
+        found.push(...r.querySelectorAll(selector));
+      } catch (_) {}
+      let all = [];
+      try {
+        all = r.querySelectorAll("*");
+      } catch (_) {}
+      for (const el of all) {
+        if (el.shadowRoot) walk(el.shadowRoot);
+      }
+    };
+    walk(document);
+    return found;
+  }
+
+  function commentText(node) {
+    const stack = [node];
+    const seen = new Set();
+    while (stack.length) {
+      const n = stack.pop();
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      try {
+        const el = n.querySelector && n.querySelector("#content-text");
+        if (el) {
+          const t = (el.innerText || el.textContent || "").trim();
+          if (t) return t;
+        }
+      } catch (_) {}
+      if (n.shadowRoot) stack.push(n.shadowRoot);
+      const kids = n.querySelectorAll ? n.querySelectorAll("*") : [];
+      for (const k of kids) if (k.shadowRoot) stack.push(k.shadowRoot);
+    }
+    return "";
+  }
+
+  function extractYoutubeComments() {
+    // 1) Try DOM (works if the comment shadow roots are open/accessible).
+    const seen = new Set();
+    const out = [];
+    for (const node of allShadowMatches("ytd-comment-renderer")) {
+      const t = commentText(node);
+      if (t && t.length > 3 && !seen.has(t)) {
+        seen.add(t);
+        out.push(t);
+      }
+    }
+    if (out.length) return dedupe(out);
+
+    // 2) Fallback: parse the embedded ytInitialData JSON (DOM-independent; works
+    //    even when YouTube uses closed shadow roots).
+    return collectCommentsFromInitialData();
+  }
+
+  // Parses a page-global JSON variable (e.g. ytInitialData / ytInitialPlayerResponse)
+  // from window or a <script> tag, robust to nested braces/strings.
+  function getPageVar(name) {
+    try {
+      if (window[name]) return window[name];
+    } catch (_) {}
+    const scripts = document.querySelectorAll("script");
+    for (const s of scripts) {
+      const t = s.textContent || "";
+      for (const pat of [`${name} =`, `var ${name} =`, `window.${name} =`]) {
+        const idx = t.indexOf(pat);
+        if (idx === -1) continue;
+        const start = t.indexOf("{", idx);
+        if (start === -1) continue;
+        let depth = 0;
+        let inStr = false;
+        let esc = false;
+        let i = start;
+        for (; i < t.length; i++) {
+          const ch = t[i];
+          if (inStr) {
+            if (esc) esc = false;
+            else if (ch === "\\") esc = true;
+            else if (ch === '"') inStr = false;
+            continue;
+          }
+          if (ch === '"') inStr = true;
+          else if (ch === "{") depth++;
+          else if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+              i++;
+              break;
+            }
+          }
+        }
+        try {
+          return JSON.parse(t.slice(start, i));
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  function runsToText(contentText) {
+    if (!contentText) return "";
+    if (typeof contentText === "string") return contentText;
+    if (contentText.simpleText) return contentText.simpleText;
+    if (Array.isArray(contentText.runs)) {
+      return contentText.runs.map((r) => (r && r.text) || "").join("");
+    }
+    return "";
+  }
+
+  // Walks the whole ytInitialData object and collects comment body text.
+  function collectCommentsFromInitialData() {
+    const data = getPageVar("ytInitialData");
+    if (!data) return [];
+    const texts = [];
+    const stack = [data];
+    const seen = new Set();
+    while (stack.length) {
+      const n = stack.pop();
+      if (!n || typeof n !== "object") continue;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      if (Array.isArray(n)) {
+        for (const x of n) stack.push(x);
+        continue;
+      }
+      // A commentRenderer holds the comment body in .contentText.
+      if (n.commentRenderer && n.commentRenderer.contentText) {
+        const t = runsToText(n.commentRenderer.contentText).trim();
+        if (t) texts.push(t);
+      }
+      for (const k of Object.keys(n)) stack.push(n[k]);
+    }
+    return dedupe(texts);
+  }
+
+  // --- YouTube auto-scroll ---
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function countComments() {
+    return allShadowMatches("ytd-comment-renderer").length;
+  }
+
+  function expandReplies() {
+    document
+      .querySelectorAll(
+        "ytd-comment-replies-renderer #more-replies, #expander, ytd-comment-thread-renderer #more-replies",
+      )
+      .forEach((el) => {
+        try {
+          el.click();
+        } catch (_) {}
+      });
+    document.querySelectorAll("ytd-button-renderer").forEach((b) => {
+      const t = (b.textContent || "").toLowerCase();
+      if (t.includes("show more") || t.includes("load more")) {
+        try {
+          b.click();
+        } catch (_) {}
+      }
+    });
+  }
+
+  function scrollComments() {
+    const c = document.querySelector("ytd-comments") || document.querySelector("#comments");
+    if (c) {
+      try {
+        c.scrollIntoView({ block: "start", behavior: "smooth" });
+      } catch (_) {}
+      try {
+        c.scrollTop = c.scrollHeight;
+      } catch (_) {}
+    }
+    try {
+      window.scrollBy(0, Math.round(window.innerHeight * 0.8));
+    } catch (_) {}
+    try {
+      window.scrollTo(0, document.body.scrollHeight);
+    } catch (_) {}
+  }
+
+  async function findCommentsSection(timeoutMs) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (
+        document.querySelector("ytd-comments, #comments, ytd-comment-thread-renderer")
+      ) {
+        return true;
+      }
+      try {
+        window.scrollBy(0, 700);
+      } catch (_) {}
+      await sleep(350);
+    }
+    return false;
+  }
+
+  async function ensureYoutubeComments(target, maxScrolls, onProgress) {
+    // Wait for the comments section to render on the page before collecting.
+    await findCommentsSection(8000);
+    let last = countComments();
+    let stable = 0;
+    for (let i = 0; i < maxScrolls; i++) {
+      expandReplies();
+      scrollComments();
+      await sleep(1300);
+      const c = countComments();
+      if (onProgress) onProgress(c);
+      if (c === last) {
+        stable++;
+        if (stable >= 4) break;
+      } else {
+        stable = 0;
+        last = c;
+        if (c >= target) break;
+      }
+    }
+    return collectComments();
+  }
+
+  // --- on-page summary card ---
+  let cardEl = null;
+  let styleInjected = false;
+
+  function injectStyle() {
+    if (styleInjected) return;
+    styleInjected = true;
+    const style = document.createElement("style");
+    style.textContent = `
+      #cs-card { all: initial; position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
+        width: 380px; max-width: calc(100vw - 32px); max-height: 75vh; display: flex; flex-direction: column;
+        background: #ffffff; color: #1f2328; border: 1px solid #d0d7de; border-radius: 10px;
+        box-shadow: 0 8px 30px rgba(0,0,0,.25); font: 13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+      #cs-card * { box-sizing: border-box; }
+      #cs-card .cs-header { display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 12px; border-bottom: 1px solid #d0d7de; font-weight: 600; }
+      #cs-card .cs-header span { flex: 1; min-width: 0; line-height: 1.25; }
+      #cs-card .cs-close { flex: none; border: none; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: #6a737d; margin-left: 8px; }
+      #cs-card .cs-body { padding: 12px; overflow: auto; max-height: 58vh; }
+      #cs-card .cs-status { white-space: pre-wrap; }
+      #cs-card .cs-status.pending { color: #1e40af; }
+      #cs-card .cs-status.error { color: #dc2626; }
+      #cs-card .cs-result { font-size: 13px; line-height: 1.5; }
+      #cs-card .cs-meta { color: #6a737d; font-size: 12px; margin-bottom: 8px; }
+      #cs-card .cs-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid #d0d7de; }
+      #cs-card .cs-copy { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+      #cs-card .cs-regen { border: 1px solid #d0d7de; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: #57606a; }
+      #cs-card .hidden { display: none; }
+      #cs-card .cs-ask { display: flex; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+      #cs-card .cs-ask-input { flex: 1; border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font: inherit; }
+      #cs-card .cs-ask-input:disabled { background: #f6f8fa; }
+      #cs-card .cs-ask-btn { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+      #cs-card .cs-copy, #cs-card .cs-regen, #cs-card .cs-ask-btn { font: inherit; color: #1f2328; }
+      #cs-card .cs-followup { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #d0d7de; font-size: 13px; line-height: 1.5; }
+      #cs-card .cs-followup.error { color: #dc2626; }
+      #cs-card .cs-followup.pending { color: #1e40af; }
+      /* Markdown rendering */
+      #cs-card .cs-result h1, #cs-card .cs-result h2, #cs-card .cs-result h3,
+      #cs-card .cs-result h4, #cs-card .cs-result h5, #cs-card .cs-result h6 {
+        font-size: 13px; font-weight: 700; margin: 12px 0 4px; color: #1f2328;
+      }
+      #cs-card .cs-result h1, #cs-card .cs-result h2, #cs-card .cs-result h3 { font-size: 14px; }
+      #cs-card .cs-result p { margin: 0 0 8px; }
+      #cs-card .cs-result ul, #cs-card .cs-result ol { margin: 0 0 8px; padding-left: 20px; }
+      #cs-card .cs-result li { margin: 2px 0; }
+      #cs-card .cs-result code { background: #f0f1f3; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+      #cs-card .cs-result pre { background: #f0f1f3; padding: 8px; border-radius: 6px; overflow: auto; }
+      #cs-card .cs-result pre code { background: none; padding: 0; }
+      #cs-card .cs-result blockquote { margin: 0 0 8px; padding: 2px 0 2px 10px; border-left: 3px solid #d0d7de; color: #57606a; }
+      #cs-card .cs-result a { color: #2563eb; text-decoration: underline; }
+      #cs-card .cs-result strong { font-weight: 700; }
+      #cs-card .cs-result em { font-style: italic; }
+      #cs-card .cs-result hr { border: none; border-top: 1px solid #d0d7de; margin: 10px 0; }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function ensureCard() {
+    if (cardEl && document.documentElement.contains(cardEl)) return cardAPI();
+    injectStyle();
+
+    cardEl = document.createElement("div");
+    cardEl.id = "cs-card";
+    cardEl.innerHTML = `
+      <div class="cs-header"><span>Doxa — Reddit &amp; YouTube Summarizer</span><button class="cs-close" title="Close">×</button></div>
+      <div class="cs-body">
+        <div class="cs-status pending"></div>
+        <div class="cs-meta hidden"></div>
+        <div class="cs-result hidden"></div>
+        <div class="cs-followup hidden"></div>
+        <div class="cs-ask hidden">
+          <input class="cs-ask-input" type="text" placeholder="Ask a follow-up…" />
+          <button class="cs-ask-btn">Ask</button>
+        </div>
+      </div>
+      <div class="cs-footer hidden"><button class="cs-copy">Copy</button><button class="cs-regen">Regenerate</button></div>
+    `;
+    cardEl.querySelector(".cs-close").addEventListener("click", () => cardEl.remove());
+    cardEl.querySelector(".cs-copy").addEventListener("click", async () => {
+      const txt = cardEl.querySelector(".cs-result").textContent;
+      try {
+        await navigator.clipboard.writeText(txt);
+        const b = cardEl.querySelector(".cs-copy");
+        b.textContent = "Copied";
+        setTimeout(() => (b.textContent = "Copy"), 1200);
+      } catch (_) {}
+    });
+    cardEl.querySelector(".cs-regen").addEventListener("click", () => regenerate());
+    cardEl.querySelector(".cs-ask-btn").addEventListener("click", () => askFollowup());
+    cardEl
+      .querySelector(".cs-ask-input")
+      .addEventListener("keydown", (e) => {
+        if (e.key === "Enter") askFollowup();
+      });
+    // Open linked sources in a new tab. Safari doesn't reliably honor
+    // window.open from a content script (and its "noopener" feature string is
+    // inconsistent), and target=_blank navigation from content-script DOM can be
+    // flaky, so hand the URL to the background, which calls browser.tabs.create —
+    // that works in both Firefox and Safari.
+    cardEl.addEventListener("click", (e) => {
+      const a = e.target && e.target.closest ? e.target.closest("a") : null;
+      if (a && a.getAttribute("href")) {
+        e.preventDefault();
+        e.stopPropagation();
+        browser.runtime
+          .sendMessage({ type: "open-url", url: a.getAttribute("href") })
+          .catch(() => {});
+      }
+    });
+    document.documentElement.appendChild(cardEl);
+    return cardAPI();
+  }
+
+  function cardAPI() {
+    const q = (sel) => cardEl.querySelector(sel);
+    return {
+      status(text, kind) {
+        const s = q(".cs-status");
+        s.textContent = text;
+        s.className = "cs-status " + (kind === "error" ? "error" : "pending");
+        q(".cs-meta").classList.add("hidden");
+        q(".cs-result").classList.add("hidden");
+        q(".cs-followup").classList.add("hidden");
+        q(".cs-ask").classList.add("hidden");
+        q(".cs-footer").classList.add("hidden");
+      },
+      result(text, countLabel, model) {
+        const s = q(".cs-status");
+        s.textContent = "Done.";
+        s.className = "cs-status";
+        q(".cs-meta").textContent = `${countLabel} · ${model}`;
+        q(".cs-meta").classList.remove("hidden");
+        setHtml(q(".cs-result"), renderMarkdown(text, _lastContext && _lastContext.urls));
+        q(".cs-result").classList.remove("hidden");
+        q(".cs-followup").classList.add("hidden");
+        q(".cs-ask").classList.remove("hidden");
+        q(".cs-footer").classList.remove("hidden");
+      },
+      renderFollowup(text) {
+        q(".cs-followup").className = "cs-followup";
+        setHtml(q(".cs-followup"), renderMarkdown(text, _lastContext && _lastContext.urls));
+        q(".cs-followup").classList.remove("hidden");
+        scrollBody();
+      },
+      renderFollowupError(text) {
+        q(".cs-followup").className = "cs-followup error";
+        q(".cs-followup").textContent = text;
+        q(".cs-followup").classList.remove("hidden");
+        scrollBody();
+      },
+      askPending() {
+        const input = q(".cs-ask-input");
+        input.placeholder = "Asking…";
+        input.disabled = true;
+        // Show the in-flight counter here; startAskTicker() updates the text.
+        const fu = q(".cs-followup");
+        fu.className = "cs-followup pending";
+        fu.textContent = "Thinking…";
+        fu.classList.remove("hidden");
+      },
+      askDone() {
+        const input = q(".cs-ask-input");
+        input.placeholder = "Ask a follow-up…";
+        input.disabled = false;
+        input.value = "";
+        input.focus();
+      },
+    };
+  }
+
+  // --- safe Markdown -> HTML ---
+  function scrollBody() {
+    if (!cardEl) return;
+    const body = cardEl.querySelector(".cs-body");
+    if (body) {
+      try {
+        body.scrollTop = body.scrollHeight;
+      } catch (_) {}
+    }
+  }
+  // Insert already-sanitized HTML (markdown) into the card without an
+  // innerHTML assignment, so the DOM is built by the parser instead — avoids
+  // AMO's UNSAFE_VAR_ASSIGNMENT warning and runs no scripts.
+  function setHtml(el, html) {
+    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+    el.replaceChildren(...doc.body.childNodes);
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function inlineMd(s) {
+    let out = escapeHtml(s);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+    out = out.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)"'\s]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener">$1</a>',
+    );
+    return out;
+  }
+
+  // Turns a numbered "Sources" citation into a link. If the model already wrote a
+  // markdown link ([permalink](url)) we leave it to inlineMd; otherwise we attach
+  // the permalink the extension actually collected for that comment number, so
+  // the sources stay clickable even when the model omits the URL.
+  function renderCite(line, commentUrls) {
+    const m = line.match(/^\[(\d+)\]\s*(.*)$/);
+    if (!m) return null;
+    if (/\[[^\]]+\]\(https?:\/\//.test(line)) return null; // model already linked it
+    const n = parseInt(m[1], 10);
+    const href = commentUrls && commentUrls[n - 1];
+    if (!href) return null;
+    return `<p><a href="${escapeHtml(href)}" target="_blank" rel="noopener">${inlineMd(line)}</a></p>`;
+  }
+
+  function renderMarkdown(md, commentUrls) {
+    const lines = String(md || "").split(/\r?\n/);
+    const out = [];
+    let inList = null;
+    let items = [];
+    const closeList = () => {
+      if (inList) {
+        out.push(`<${inList}>${items.map((li) => `<li>${li}</li>`).join("")}</${inList}>`);
+        inList = null;
+        items = [];
+      }
+    };
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, "");
+      const head = line.match(/^(#{1,4})\s+(.*)$/);
+      const ul = line.match(/^\s*[-*]\s+(.*)$/);
+      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      const bq = line.match(/^\s*>\s?(.*)$/);
+
+      if (head) {
+        closeList();
+        const level = Math.min(3, head[1].length) + 2;
+        out.push(`<h${level}>${inlineMd(head[2])}</h${level}>`);
+        continue;
+      }
+      if (ul || ol) {
+        const type = ul ? "ul" : "ol";
+        const content = inlineMd((ul || ol)[1]);
+        if (inList !== type) {
+          closeList();
+          inList = type;
+        }
+        items.push(content);
+        continue;
+      }
+      if (!line.trim()) {
+        closeList();
+        continue;
+      }
+      if (bq) {
+        closeList();
+        out.push(`<blockquote>${inlineMd(bq[1])}</blockquote>`);
+        continue;
+      }
+      const cite = renderCite(line, commentUrls);
+      if (cite) {
+        closeList();
+        out.push(cite);
+        continue;
+      }
+      closeList();
+      out.push(`<p>${inlineMd(line)}</p>`);
+    }
+    closeList();
+    return out.join("\n");
+  }
+})();

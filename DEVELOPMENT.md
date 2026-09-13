@@ -175,6 +175,13 @@ direct download first:
 - **Mac App Store:** archive with an **Apple Distribution** certificate
   (Archive → Distribute App → App Store Connect), beta via TestFlight, then submit
   for review.
+  > **Choose "TestFlight & App Store" when uploading from Xcode**, not "TestFlight
+  > Internal Testing Only". The latter uploads the build with audience
+  > `INTERNAL_ONLY`, which is testable but **cannot be attached to an App Store
+  > version** — the API rejects it with 409 "The specified pre-release build could
+  > not be added". Xcode Cloud's Archive action produces `APP_STORE_ELIGIBLE`
+  > builds. Check with `GET /v1/builds?filter[app]=…` →
+  > `attributes.buildAudienceType`.
 
 **Notarization (CLI alternative).** `notarytool` needs no keychain, so it works
 even where CLI *signing* is broken (see below). It requires an app that is

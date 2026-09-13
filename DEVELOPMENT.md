@@ -42,9 +42,9 @@ extension/                 # the WebExtension (single source of truth)
   icons/                   # toolbar icons
 
 Comment Summarizer/        # generated Safari container app + extension (Xcode)
-  Comment Summarizer.xcodeproj
-  Comment Summarizer/           # container app target
-  Comment Summarizer Extension/ # Safari extension target
+  Doxa Comment Summarizer.xcodeproj   # project + targets are "Doxa ..."
+  Comment Summarizer/           # container app sources
+  Comment Summarizer Extension/ # Safari extension sources
     Resources/                  # ← COPIES of extension/ files (see syncing)
 
 tools/                     # node test + diagnostic scripts
@@ -132,7 +132,7 @@ committed, so Xcode Cloud can build it).
 `--project-name`:
 
 ```bash
-xcrun safari-web-extension-converter --app-name "Comment Summarizer" --bundle-identifier com.theschochs.doxa --macos-only --force extension/
+xcrun safari-web-extension-converter --app-name "Doxa Comment Summarizer" --bundle-identifier com.theschochs.doxa --macos-only --force extension/
 ```
 
 > - **Don't pass `--project-name`** — it isn't a supported flag (the tool wraps
@@ -150,7 +150,7 @@ xcrun safari-web-extension-converter --app-name "Comment Summarizer" --bundle-id
 
 ### Running locally
 
-1. Open `Comment Summarizer/Comment Summarizer.xcodeproj`.
+1. Open `Comment Summarizer/Doxa Comment Summarizer.xcodeproj`.
 2. Select the **Comment Summarizer** target → **Signing & Capabilities** → set
    your **Team** (a free personal Apple ID team runs on your own Mac).
 3. Pick **My Mac** and press **Run** (⌘R) — this builds and launches the container
@@ -199,10 +199,15 @@ Staple the **app** before packaging the DMG.
 - Display name is **Doxa** for both targets
   (`INFOPLIST_KEY_CFBundleDisplayName`), and `PRODUCT_NAME` is **Doxa** (app) /
   **Doxa Extension** (extension) — so macOS, Finder and Safari's Extensions pane
-  all show "Doxa" and the app builds as **`Doxa.app`**. Only the **target and
-  scheme names** stay "Comment Summarizer" / "Comment Summarizer Extension",
-  deliberately: the Xcode Cloud workflow binds to the "Comment Summarizer" scheme.
-  Rebuild (⌘R) after changing a name; Safari picks it up on next launch.
+  all show "Doxa" and the app builds as **`Doxa.app`**.
+- The **project and targets** are named "Doxa Comment Summarizer" /
+  "Doxa Comment Summarizer Extension" (project at
+  `Comment Summarizer/Doxa Comment Summarizer.xcodeproj`). The source folders
+  `Comment Summarizer/` and `Comment Summarizer Extension/` kept their old names.
+  The **shared scheme is still named "Comment Summarizer"** — leave it that way:
+  the Xcode Cloud workflow references it by that name, so renaming the scheme
+  means updating the workflow as well. Rebuild (⌘R) after changing a name; Safari
+  picks it up on next launch.
 - Team `LJVYV7ZJ44`; signing style **Automatic** (the pinned
   `CODE_SIGN_IDENTITY = "Apple Development"` was removed so archive/distribution
   selects the correct identity — don't reintroduce it).
@@ -251,7 +256,11 @@ Xcode Cloud builds from the committed git repo, so the Xcode project **must stay
 committed** (it was previously gitignored, which made the cloud build fail with
 "Project … does not exist"). It archives for App Store/TestFlight and manages its
 own signing credentials — the App Store Connect API key is *not* used by Xcode
-Cloud, so never commit the `.p8`. The **shared scheme** is committed (xcshareddata/xcschemes/Comment Summarizer.xcscheme) for the same reason — Xcode Cloud needs a shared scheme, and an unshared one is invisible to it.
+Cloud, so never commit the `.p8`. The **shared scheme** is committed (xcshareddata/xcschemes/Comment Summarizer.xcscheme) for the same reason — Xcode Cloud needs a shared scheme, and an unshared one is invisible to it. The workflow also stores a
+**`containerFilePath`** pointing at the `.xcodeproj` — **if you rename or move the
+project, update the workflow**, or the next cloud run fails with "Project … does
+not exist". It is writable through the App Store Connect API:
+`PATCH /v1/ciWorkflows/{id}` with `{"data":{"type":"ciWorkflows","id":…,"attributes":{"containerFilePath":"…"}}}`.
 
 Local CLI signing on this machine is broken (`errSecInternalComponent` — keychain
 access is GUI-only), so signing/archiving happens in the Xcode GUI or in Xcode

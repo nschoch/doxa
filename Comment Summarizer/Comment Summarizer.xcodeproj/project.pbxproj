@@ -15,7 +15,7 @@
 		770D37C1304A040300C275FD /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 770D37C0304A040300C275FD /* ViewController.swift */; };
 		770D37C4304A040300C275FD /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 770D37C2304A040300C275FD /* Main.storyboard */; };
 		770D37C6304A040300C275FD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 770D37C5304A040300C275FD /* Assets.xcassets */; };
-		770D37CD304A040300C275FD /* Comment Summarizer Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 770D37CC304A040300C275FD /* Comment Summarizer Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		770D37CD304A040300C275FD /* Comment Summarizer Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 770D37CC304A040300C275FD /* Doxa Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		770D37D2304A040300C275FD /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 770D37D1304A040300C275FD /* SafariWebExtensionHandler.swift */; };
 		770D37E5304A040400C275FD /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 770D37DE304A040400C275FD /* popup.js */; };
 		770D37E6304A040400C275FD /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 770D37DF304A040400C275FD /* background.js */; };
@@ -51,7 +51,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		770D37B1304A040300C275FD /* Comment Summarizer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Comment Summarizer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		770D37B1304A040300C275FD /* Doxa.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Doxa.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		770D37B4304A040300C275FD /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		770D37B8304A040300C275FD /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
 		770D37BA304A040300C275FD /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
@@ -61,7 +61,7 @@
 		770D37C3304A040300C275FD /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		770D37C5304A040300C275FD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		770D37C7304A040300C275FD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		770D37CC304A040300C275FD /* Comment Summarizer Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Comment Summarizer Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		770D37CC304A040300C275FD /* Doxa Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Doxa Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		770D37D1304A040300C275FD /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		770D37D3304A040300C275FD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		770D37DE304A040400C275FD /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = popup.js; path = Resources/popup.js; sourceTree = "<group>"; };
@@ -103,8 +103,8 @@
 		770D37B2304A040300C275FD /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				770D37B1304A040300C275FD /* Comment Summarizer.app */,
-				770D37CC304A040300C275FD /* Comment Summarizer Extension.appex */,
+				770D37B1304A040300C275FD /* Doxa.app */,
+				770D37CC304A040300C275FD /* Doxa Extension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -179,7 +179,7 @@
 			packageProductDependencies = (
 			);
 			productName = "Comment Summarizer";
-			productReference = 770D37B1304A040300C275FD /* Comment Summarizer.app */;
+			productReference = 770D37B1304A040300C275FD /* Doxa.app */;
 			productType = "com.apple.product-type.application";
 		};
 		770D37CB304A040300C275FD /* Comment Summarizer Extension */ = {
@@ -198,7 +198,7 @@
 			packageProductDependencies = (
 			);
 			productName = "Comment Summarizer Extension";
-			productReference = 770D37CC304A040300C275FD /* Comment Summarizer Extension.appex */;
+			productReference = 770D37CC304A040300C275FD /* Doxa Extension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -461,7 +461,7 @@
 					SafariServices,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.theschochs.doxa.Extension;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Doxa Extension";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -497,7 +497,7 @@
 					SafariServices,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.theschochs.doxa.Extension;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Doxa Extension";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -539,7 +539,7 @@
 					WebKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.theschochs.doxa;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Doxa";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -582,7 +582,7 @@
 					WebKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.theschochs.doxa;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Doxa";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

@@ -182,12 +182,12 @@ even where CLI *signing* is broken (see below). It requires an app that is
 ID, then:
 
 ```bash
-xcrun notarytool submit "Comment Summarizer.app" \
+xcrun notarytool submit "Doxa.app" \
   --key AuthKey_<KEYID>.p8 \
   --key-id <KEYID> \
   --issuer <ISSUER_UUID> \
   --wait
-xcrun stapler staple "Comment Summarizer.app"
+xcrun stapler staple "Doxa.app"
 ```
 
 Staple the **app** before packaging the DMG.
@@ -197,12 +197,12 @@ Staple the **app** before packaging the DMG.
 - Bundle IDs: `com.theschochs.doxa` (container app) and
   `com.theschochs.doxa.Extension` (extension target).
 - Display name is **Doxa** for both targets
-  (`INFOPLIST_KEY_CFBundleDisplayName`), so Safari's Extensions pane and Finder
-  show "Doxa" instead of "Comment Summarizer Extension". The built product file is
-  still `Comment Summarizer.app`, because `PRODUCT_NAME` follows the target name —
-  the target names were deliberately left alone since the Xcode Cloud workflow
-  binds to the "Comment Summarizer" scheme. Rebuild (⌘R) after changing a display
-  name; Safari picks the new name up on the next launch.
+  (`INFOPLIST_KEY_CFBundleDisplayName`), and `PRODUCT_NAME` is **Doxa** (app) /
+  **Doxa Extension** (extension) — so macOS, Finder and Safari's Extensions pane
+  all show "Doxa" and the app builds as **`Doxa.app`**. Only the **target and
+  scheme names** stay "Comment Summarizer" / "Comment Summarizer Extension",
+  deliberately: the Xcode Cloud workflow binds to the "Comment Summarizer" scheme.
+  Rebuild (⌘R) after changing a name; Safari picks it up on next launch.
 - Team `LJVYV7ZJ44`; signing style **Automatic** (the pinned
   `CODE_SIGN_IDENTITY = "Apple Development"` was removed so archive/distribution
   selects the correct identity — don't reintroduce it).
@@ -251,7 +251,7 @@ Xcode Cloud builds from the committed git repo, so the Xcode project **must stay
 committed** (it was previously gitignored, which made the cloud build fail with
 "Project … does not exist"). It archives for App Store/TestFlight and manages its
 own signing credentials — the App Store Connect API key is *not* used by Xcode
-Cloud, so never commit the `.p8`.
+Cloud, so never commit the `.p8`. The **shared scheme** is committed (xcshareddata/xcschemes/Comment Summarizer.xcscheme) for the same reason — Xcode Cloud needs a shared scheme, and an unshared one is invisible to it.
 
 Local CLI signing on this machine is broken (`errSecInternalComponent` — keychain
 access is GUI-only), so signing/archiving happens in the Xcode GUI or in Xcode

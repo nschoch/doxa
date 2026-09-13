@@ -196,6 +196,13 @@ Staple the **app** before packaging the DMG.
 
 - Bundle IDs: `com.theschochs.doxa` (container app) and
   `com.theschochs.doxa.Extension` (extension target).
+- Display name is **Doxa** for both targets
+  (`INFOPLIST_KEY_CFBundleDisplayName`), so Safari's Extensions pane and Finder
+  show "Doxa" instead of "Comment Summarizer Extension". The built product file is
+  still `Comment Summarizer.app`, because `PRODUCT_NAME` follows the target name —
+  the target names were deliberately left alone since the Xcode Cloud workflow
+  binds to the "Comment Summarizer" scheme. Rebuild (⌘R) after changing a display
+  name; Safari picks the new name up on the next launch.
 - Team `LJVYV7ZJ44`; signing style **Automatic** (the pinned
   `CODE_SIGN_IDENTITY = "Apple Development"` was removed so archive/distribution
   selects the correct identity — don't reintroduce it).

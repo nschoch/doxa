@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Doxa",
   "version": "1.0.9",
-  "description": "Summarize Reddit threads and YouTube comments with local Ollama or your own OpenAI-compatible key.",
+  "description": "Summarize Reddit and YouTube comments in one click. Local Ollama or your own API key.",
   "homepage_url": "https://github.com/nschoch/doxa",
   "developer": {
     "name": "Nick Schoch",

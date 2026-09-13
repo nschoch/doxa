@@ -223,6 +223,36 @@ Staple the **app** before packaging the DMG.
 - **Don't change the bundle ID after the first public release** — it's locked to
   the App Store record and to installed copies.
 
+### Duplicate "Doxa" entries in Safari's Extensions list
+
+Safari lists **every registered copy** of the extension. `Product → Archive`
+builds into
+`…/DerivedData/<project>/Build/Intermediates.noindex/ArchiveIntermediates/<target>/InstallationBuildProductsLocation/Applications/Doxa.app`
+and macOS registers the extension from *that* staging path — so a second (later
+third) "Doxa" shows up, and the registration can outlive the folder it points at
+(which also breaks the extension Safari is actually using).
+
+Diagnose and clean up:
+
+```bash
+# the registry Safari reads — expect exactly ONE Doxa entry
+pluginkit -m -p com.apple.Safari.web-extension -v
+
+pluginkit -r "<dead appex path>"              # unregister an orphaned copy
+rm -rf ~/Library/Developer/Xcode/DerivedData/<project>-*   # kill the staging copy
+lsregister -f /Applications/Doxa.app          # re-register the real app…
+pluginkit -a "/Applications/Doxa.app/Contents/PlugIns/Doxa Extension.appex"
+```
+
+Then **quit and reopen Safari** and re-enable the extension (site permissions may
+need re-approving). Notes: `lsregister -kill` no longer exists in current macOS,
+`lsregister -u` does not clear the `InstallationBuildProductsLocation` record
+(only a reboot/logout does), and removing a registration affects *all* Safari
+extensions — re-register any (e.g. Obsidian) that goes missing.
+
+**Prevention:** let **Xcode Cloud** build (it never touches this Mac), and delete
+DerivedData after any local archive.
+
 ## Syncing the Safari resources
 
 `Comment Summarizer Extension/Resources/` holds **copies** of the `extension/`

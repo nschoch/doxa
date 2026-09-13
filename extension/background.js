@@ -97,6 +97,30 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// Keyboard shortcuts (defined in the manifest's "commands"). No popup is open
+// when a shortcut fires, so relay the command to the active tab's content
+// script — it owns the card and the whole summarization flow.
+const COMMAND_MESSAGES = {
+  summarize: "command-summarize",
+  "summarize-with-gemini": "command-gemini",
+};
+
+if (api.commands && api.commands.onCommand) {
+  api.commands.onCommand.addListener(async (command) => {
+    const type = COMMAND_MESSAGES[command];
+    if (!type) return;
+    try {
+      const tabs = await api.tabs.query({ active: true, currentWindow: true });
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id) return;
+      await api.tabs.sendMessage(tab.id, { type });
+    } catch (_) {
+      // No content script on the active page (not Reddit/YouTube, or the
+      // extension was just reloaded) — nothing to do, so stay quiet.
+    }
+  });
+}
+
 async function listModels(message) {
   const provider = message.provider || "ollama";
   const timeoutSec = Math.min(Number(message.timeoutSec) || 30, 60);

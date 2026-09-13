@@ -68,6 +68,18 @@
       sendResponse({ ok: true });
       return;
     }
+    // Keyboard-shortcut equivalents of the popup's two buttons (manifest
+    // "commands"); the background relays them to this script.
+    if (message && message.type === "command-summarize") {
+      startSummary();
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message && message.type === "command-gemini") {
+      geminiShortcut();
+      sendResponse({ ok: true });
+      return;
+    }
     if (message && message.type === "ping") {
       sendResponse({ ok: true, host: location.host });
       return;
@@ -240,6 +252,42 @@
   function regenerate() {
     _cached = null;
     startSummary();
+  }
+
+  // Keyboard-shortcut version of the popup's "Summarize with Gemini" button.
+  // No popup is open during a shortcut, so feedback goes to the on-page card.
+  async function geminiShortcut() {
+    const card = ensureCard();
+    const url = location.href;
+    if (!location.host.includes("youtube.com") || !url.includes("v=")) {
+      card.status("Open a YouTube video, then use the shortcut again.", "error");
+      return;
+    }
+    const prompt = `Summarize this video: ${url}`;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      copied = true;
+    } catch (_) {
+      /* clipboard unavailable — the URL can still be pasted by hand */
+    }
+    // Gemini strips URL prompt params, so we can't pre-fill: open a fresh chat
+    // and let the user paste. The background opens it (tabs.create) because
+    // Safari is unreliable about window.open from a content script.
+    try {
+      await browser.runtime.sendMessage({
+        type: "open-url",
+        url: "https://gemini.google.com/app",
+      });
+    } catch (_) {
+      /* background unavailable */
+    }
+    card.status(
+      copied
+        ? "Prompt copied to your clipboard. Gemini opened in a new tab — switch to it, press ⌘V, then Send."
+        : "Gemini opened in a new tab. Paste the video URL and ask it to summarize.",
+      "pending",
+    );
   }
 
   async function startSummary() {

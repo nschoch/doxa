@@ -127,6 +127,10 @@ does not.
 > (without refreshing) shows the cached summary instead of re-running the model.
 > Use the card's **Regenerate** button (or reload the page) to force a fresh run.
 
+> **Keyboard shortcuts.** Doxa ships two commands — *Summarize comments on this
+> page* and *Summarize this YouTube video with Gemini*. In Safari, assign keys
+> under **Settings → Extensions → Doxa → Shortcuts** (⌘⌥S and ⌘⌥G work well).
+
 ### Update checking
 
 Doxa checks whether a newer version exists and, if so, shows an **"Update

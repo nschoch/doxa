@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Doxa",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Summarize Reddit and YouTube comments in one click. Local Ollama or your own API key.",
   "homepage_url": "https://github.com/nschoch/doxa",
   "developer": {
@@ -40,6 +40,22 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Summarize comments"
+  },
+  "commands": {
+    "summarize": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Command+Alt+S"
+      },
+      "description": "Summarize comments on this page"
+    },
+    "summarize-with-gemini": {
+      "suggested_key": {
+        "default": "Alt+Shift+G",
+        "mac": "Command+Alt+G"
+      },
+      "description": "Summarize this YouTube video with Gemini"
+    }
   },
   "content_scripts": [
     {

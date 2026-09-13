@@ -223,6 +223,26 @@ files. After editing anything under `extension/`, copy the changed files across
 (manifest, `background.js`, `content.js`, `popup.*`) and rebuild in Xcode.
 `extension/` remains the source of truth.
 
+## Keyboard shortcuts
+
+The manifest declares two `commands`. `background.js` listens for
+`commands.onCommand` and relays to the active tab's content script (no popup is
+open when a shortcut fires):
+
+| Command id | Runs | Suggested key |
+|---|---|---|
+| `summarize` | `startSummary()` — the popup's main button | ⌥⇧S / ⌘⌥S |
+| `summarize-with-gemini` | `geminiShortcut()` — mirrors the popup's Gemini hand-off | ⌥⇧G / ⌘⌥G |
+
+- **Safari ignores `suggested_key`** — assign keys in Safari → Settings →
+  Extensions → Doxa → Shortcuts (Chrome honours the suggested keys). Note Safari
+  lists the extension's *toolbar item* there too; that row only opens the popup.
+- Both commands reuse the popup's own entry points, so the enabled-site checks,
+  the YouTube Data API key requirement and the on-page card behave identically.
+- Feedback goes to the card (there's no popup), and the **clipboard write happens
+  in the content script** because the background has no DOM. Gemini still needs a
+  manual paste — its web app strips URL prompt parameters.
+
 ## Checks before committing
 
 ```bash

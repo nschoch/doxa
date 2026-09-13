@@ -271,9 +271,14 @@ open when a shortcut fires):
 | `summarize` | `startSummary()` — the popup's main button | ⌥⇧S / ⌘⌥S |
 | `summarize-with-gemini` | `geminiShortcut()` — mirrors the popup's Gemini hand-off | ⌥⇧G / ⌘⌥G |
 
-- **Safari ignores `suggested_key`** — assign keys in Safari → Settings →
-  Extensions → Doxa → Shortcuts (Chrome honours the suggested keys). Note Safari
-  lists the extension's *toolbar item* there too; that row only opens the popup.
+- **Safari *does* apply `suggested_key`** — the commands appeared pre-assigned to
+  ⌥⌘S / ⌥⌘G with no manual step (an earlier note here claimed the opposite; that
+  was wrong). Users can change them in Safari → Settings → Extensions → Doxa →
+  Shortcuts.
+- Safari **also** lists the extension's *toolbar item* in that section, and labels
+  it from `action.default_title`. That row only opens the popup, so the action is
+  titled **"Open Doxa"** to keep it distinct from the `summarize` command — if both
+  got the same key, Safari flags a conflict (⚠️) on both rows.
 - Both commands reuse the popup's own entry points, so the enabled-site checks,
   the YouTube Data API key requirement and the on-page card behave identically.
 - Feedback goes to the card (there's no popup), and the **clipboard write happens

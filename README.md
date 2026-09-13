@@ -128,8 +128,10 @@ does not.
 > Use the card's **Regenerate** button (or reload the page) to force a fresh run.
 
 > **Keyboard shortcuts.** Doxa ships two commands — *Summarize comments on this
-> page* and *Summarize this YouTube video with Gemini*. In Safari, assign keys
-> under **Settings → Extensions → Doxa → Shortcuts** (⌘⌥S and ⌘⌥G work well).
+> page* (**⌘⌥S**) and *Summarize this YouTube video with Gemini* (**⌘⌥G**). Safari
+> assigns those keys automatically; change them in **Settings → Extensions → Doxa →
+> Shortcuts**. Safari also lists a row for the toolbar button ("Open Doxa") — that
+> one just opens the popup, so leave it without a key unless you want it.
 
 ### Update checking
 

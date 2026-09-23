@@ -86,10 +86,10 @@ class ViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHan
         openSafariExtensionPreferences()
     }
 
-    /// Opens the settings pane that toggles the Safari web extension, then
-    /// quits. Both halves of the button's promise are guaranteed:
-    /// - if `showPreferencesForExtension` reports an error, the pane is
-    ///   opened via a `x-apple.systempreferences` URL instead;
+    /// Opens the UI that toggles the Safari web extension, then quits. Both
+    /// halves of the button's promise are guaranteed:
+    /// - if `showPreferencesForExtension` reports an error, Safari itself is
+    ///   brought to the front instead (see `openExtensionsSettingsPane()`);
     /// - if Safari's API never invokes its completion handler (observed on
     ///   recent macOS when the extension identifier is not recognised), a
     ///   timed work item forces the fallback and the quit, so the button can
@@ -123,21 +123,29 @@ class ViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHan
         }
     }
 
-    /// Opens the settings pane that lists Safari web extensions, trying the
-    /// identifiers known for each macOS generation. The identifier-less URL
-    /// at the end still launches System Settings, so an action always occurs.
+    /// Brings the UI that controls the Safari web extension to the front.
+    ///
+    /// On macOS 15 and later Safari itself owns the extension toggle: there is
+    /// no System Settings pane for Safari extensions (verified on macOS 27 —
+    /// neither `com.apple.ExtensionsPreferences` nor the Login Items pane
+    /// shows them), and opening a bare `x-apple.systempreferences:` URL lands
+    /// the user on an unrelated pane. So the fallback opens Safari, the app
+    /// that can actually enable the extension, rather than a wrong pane.
     private func openExtensionsSettingsPane() {
-        let candidates = [
-            "x-apple.systempreferences:com.apple.ExtensionsPreferences?Safari",
-            "x-apple.systempreferences:com.apple.Settings.Extensions",
-            "x-apple.systempreferences:com.apple.preference.extensions",
-            "x-apple.systempreferences:",
-        ]
-        for candidate in candidates {
-            guard let url = URL(string: candidate) else { continue }
-            if NSWorkspace.shared.open(url) {
+        if #unavailable(macOS 15) {
+            // macOS 13–14: Privacy & Security → Extensions lists the extension.
+            if let legacy = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences"),
+               NSWorkspace.shared.open(legacy) {
                 return
             }
+        }
+        if let safari = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
+           NSWorkspace.shared.open(safari) {
+            return
+        }
+        // Last resort, so the button still does something visible.
+        if let settings = URL(string: "x-apple.systempreferences:") {
+            NSWorkspace.shared.open(settings)
         }
     }
 

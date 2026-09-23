@@ -67,11 +67,17 @@ else
   check "C: timed fallback guarantees the app quits (button can never appear dead)" 0
 fi
 
-# D. settings pane opened via URL scheme when the Safari API fails
-if grep -q 'x-apple\.systempreferences' "$VC" && grep -q 'NSWorkspace' "$VC"; then
-  check "D: fallback opens the Settings pane via x-apple.systempreferences URL" 1
+# D. when the Safari API fails, bring Safari (which owns the extension toggle)
+#    to the front — and do not fall back on the pane IDs that macOS 27 no
+#    longer resolves (verified dead: com.apple.Settings.Extensions,
+#    com.apple.preference.extensions, and the blind bare URL on its own)
+if grep -q 'urlForApplication(withBundleIdentifier: "com.apple.Safari")' "$VC" \
+   && grep -q 'NSWorkspace' "$VC" \
+   && ! grep -q 'com\.apple\.Settings\.Extensions' "$VC" \
+   && ! grep -q 'com\.apple\.preference\.extensions' "$VC"; then
+  check "D: fallback opens Safari (the app that owns the extension toggle)" 1
 else
-  check "D: fallback opens the Settings pane via x-apple.systempreferences URL" 0
+  check "D: fallback opens Safari (the app that owns the extension toggle)" 0
 fi
 
 # E. original behaviour intact

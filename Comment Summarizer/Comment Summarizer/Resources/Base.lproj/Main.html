@@ -11,9 +11,12 @@
 </head>
 <body>
     <img src="../Icon.png" width="128" height="128" alt="Doxa Icon">
-    <p class="state-unknown">You can turn on Doxa’s extension in Safari Extensions preferences.</p>
-    <p class="state-on">Doxa’s extension is currently on. You can turn it off in Safari Extensions preferences.</p>
-    <p class="state-off">Doxa’s extension is currently off. You can turn it on in Safari Extensions preferences.</p>
-    <button class="open-preferences">Quit and Open Safari Extensions Preferences…</button>
+    <!-- Defaults shown when Safari's extension-state API is unavailable (it
+         returns SFErrorDomain Code=1 on macOS 15+ until the extension has been
+         enabled at least once), so they must name the current UI path. -->
+    <p class="state-unknown">Turn on Doxa’s extension in Safari: choose Settings, then Extensions.</p>
+    <p class="state-on">Doxa’s extension is currently on. You can turn it off in Safari Settings, Extensions.</p>
+    <p class="state-off">Doxa’s extension is currently off. You can turn it on in Safari Settings, Extensions.</p>
+    <button class="open-preferences">Quit and Open Safari Settings…</button>
 </body>
 </html>

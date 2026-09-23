@@ -27,3 +27,13 @@ APPSTORE.md
 # App Store screenshots — local staging (contains personal browsing session)
 appstore-screenshots/
 build-artifacts/
+
+# App Review correspondence pack (holds a credential placeholder only, kept local anyway)
+APPREVIEW-2.1-REPLY.md
+
+# App Review screen recordings — local only. They show a live desktop session
+# (personal Reading List, autocomplete suggestions, signed-in avatars) and are
+# 10s-100s of MB, so they must never land in this public repo.
+*.mov
+Screen Recording*.mov
+*.mp4

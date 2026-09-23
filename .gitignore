@@ -4,6 +4,10 @@ DerivedData/
 xcuserdata/
 *.pbxproj.bak
 
+# JS tool deps for tools/*.mjs regression loops (jsdom etc.)
+node_modules/
+package-lock.json
+
 # OS clutter
 .DS_Store
 

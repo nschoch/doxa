@@ -872,11 +872,13 @@
 
   // --- on-page summary card ---
   let cardEl = null;
-  let styleInjected = false;
+  // Live reference to the injected <style>, not a one-way boolean: Safari and
+  // page frameworks can remove nodes the content script injected, and a card
+  // re-created afterwards must not be left unstyled (i.e. invisible).
+  let styleEl = null;
 
   function injectStyle() {
-    if (styleInjected) return;
-    styleInjected = true;
+    if (styleEl && document.documentElement.contains(styleEl)) return;
     const style = document.createElement("style");
     style.textContent = `
       #cs-card { all: initial; position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
@@ -925,6 +927,7 @@
       #cs-card .cs-result hr { border: none; border-top: 1px solid #d0d7de; margin: 10px 0; }
     `;
     document.documentElement.appendChild(style);
+    styleEl = style;
   }
 
   function ensureCard() {

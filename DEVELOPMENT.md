@@ -299,18 +299,41 @@ node tools/test-render-markdown.mjs
 
 ## Release process
 
-1. Bump `version` in `extension/manifest.json` (and mirror the Resources copy).
-2. Run the checks above.
-3. Sign the Firefox build and zip the extension:
+Two channels ship from the same `extension/` source: the **Mac App Store** app
+(Safari web extension, `Comment Summarizer Extension/Resources/`) and the
+**self-hosted Firefox** add-on (`extension/`). Their manifests are identical
+**except for `version`**, which is deliberately allowed to differ:
+
+- `extension/manifest.json` — the Firefox version users see; drives the add-on's
+  own "Update available" banner, so it must match the GitHub Release tag.
+- `Resources/manifest.json` — the Safari version, bumped on its own so each
+  App Store build is identifiable in Safari → Settings → Extensions.
+
+**Never copy one manifest over the other.** Sync the code files
+(`content.js`, `popup.js`, `popup.html`, `popup.css`, `background.js`) and leave
+each version alone. `tools/prep-firefox-release.mjs` warns when the two files
+differ by anything other than `version`.
+
+1. Bump `version` in `extension/manifest.json`.
+2. Run the checks above, plus `node tools/verify-no-self-update.mjs` if the popup
+   or background script changed.
+3. Build the release zip with `node tools/prep-firefox-release.mjs` (no `zip`
+   dependency; it validates, writes `doxa-extension-<version>.zip`, and prints
+   the signing + publish steps).
+4. Sign the Firefox build (needs `doxa-amo.env`):
    ```bash
-   cd extension && zip -r ../doxa-extension-<version>.zip . -x '.*'
+   set -a; . ./doxa-amo.env; set +a
+   npx web-ext sign --source-dir extension --channel unlisted \
+     --api-key "$AMO_ISSUER" --api-secret "$AMO_SECRET"
    ```
-4. Commit, tag `v<version>`, push the tag.
-5. Publish a **GitHub Release** with the assets: `doxa-extension-<version>.zip`
+   The signed file lands in `web-ext-artifacts/` as
+   `comment_summarizer_local-<version>.xpi`; rename it `doxa-<version>-fx.xpi`.
+5. Commit, tag `v<version>`, push the tag.
+6. Publish a **GitHub Release** with the assets: `doxa-extension-<version>.zip`
    and the signed `doxa-<version>-fx.xpi`. Installed Firefox copies then show the
    "Update available" banner pointing at it (the Safari build has no update
    checker — guideline 2.4.5(vii); see `tools/verify-no-self-update.mjs`).
-6. For an App Store update: archive with Apple Distribution and upload through
+7. For an App Store update: archive with Apple Distribution and upload through
    Xcode or Xcode Cloud, then submit the new version. Bump `version` in
    `Comment Summarizer/Comment Summarizer Extension/Resources/manifest.json` so
    the new extension is distinguishable in Safari → Settings → Extensions.

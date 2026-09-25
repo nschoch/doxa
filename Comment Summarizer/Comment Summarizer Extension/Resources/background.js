@@ -76,6 +76,16 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // async response
   }
   if (message && message.type === "check-update") {
+    // Mac App Store build (Safari) does not check for, offer, or perform
+    // updates: App Store guideline 2.4.5(vii). Refuse here as the single choke
+    // point so no caller can reach the GitHub API — see the gate note below.
+    if (!UPDATES_ENABLED) {
+      sendResponse({
+        ok: false,
+        error: "Update checks are disabled in this build; updates are delivered by the App Store.",
+      });
+      return false;
+    }
     checkForUpdate(Boolean(message.force))
       .then((res) => sendResponse(res))
       .catch((err) =>
@@ -345,6 +355,23 @@ async function callOpenAICompatible(
 }
 
 // --- Update checking (GitHub Releases) ---
+// Firefox-only. App Review rejected the Mac App Store build under guideline
+// 2.4.5(vii) ("The app updates itself outside of the Mac App Store") over this
+// feature's popup UI, so the whole updater is dormant in Safari: no banner, no
+// "Check for updates" link, and no api.github.com request. In Firefox — where
+// the self-hosted .xpi genuinely cannot be updated by a store — it stays as is.
+//
+// `runtime.getBrowserInfo` is Firefox-only, so its absence means Safari. Keep
+// this in sync with the same helper in popup.js.
+function updatesSupportedInThisBrowser() {
+  try {
+    return !!(api && api.runtime && api.runtime.getBrowserInfo);
+  } catch (_) {
+    return false;
+  }
+}
+const UPDATES_ENABLED = updatesSupportedInThisBrowser();
+
 // Doxa isn't distributed through an auto-updating store, so it can't install
 // updates itself. Instead it checks GitHub for the newest published release
 // and reports it to the popup, which shows an "Update available" banner with a

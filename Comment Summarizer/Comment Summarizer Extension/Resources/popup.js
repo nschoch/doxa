@@ -55,6 +55,26 @@ const DEFAULTS = {
 const RELEASES_PAGE = "https://github.com/nschoch/doxa/releases";
 const README_URL = "https://github.com/nschoch/doxa";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1";
+
+// --- Platform gate: no third-party update UI in the Mac App Store build ---
+// App Review rejected the Mac App Store build under guideline 2.4.5(vii) ("The app
+// updates itself outside of the Mac App Store") because this popup showed an
+// "Update available" banner and a "Check for updates" link pointing at GitHub
+// Releases. The app is delivered through the Mac App Store, so updates are the
+// App Store's job: in Safari the updater stays completely dormant — no banner,
+// no footer link, no api.github.com request. Firefox (self-hosted .xpi, which
+// the store cannot update) keeps the checker.
+//
+// `runtime.getBrowserInfo` is Firefox-only, so its absence means this is the
+// Safari build. Keep this in sync with the same helper in background.js.
+function updatesSupportedInThisBrowser() {
+  try {
+    return !!(browser.runtime && browser.runtime.getBrowserInfo);
+  } catch (_) {
+    return false;
+  }
+}
+const UPDATES_ENABLED = updatesSupportedInThisBrowser();
 // Latest version we've shown the banner for (null until one is known).
 let lastKnownUpdateVersion = null;
 let lastKnownUpdateUrl = RELEASES_PAGE;
@@ -68,9 +88,11 @@ async function init() {
   refreshButtonState();
   const manifest = browser.runtime.getManifest();
   els.versionLabel.textContent = `Doxa v${(manifest && manifest.version) || "?"}`;
-  // Non-blocking: fetch/check in the background and show a banner if a newer
-  // release exists. The popup stays fully usable while this runs.
-  checkForUpdate(false);
+  if (UPDATES_ENABLED) {
+    // Non-blocking: fetch/check in the background and show a banner if a newer
+    // release exists. The popup stays fully usable while this runs.
+    checkForUpdate(false);
+  }
 }
 
 function bind() {
@@ -78,12 +100,18 @@ function bind() {
   els.geminiBtn.addEventListener("click", doGemini);
   els.saveBtn.addEventListener("click", onManualSave);
   els.fetchModelsBtn.addEventListener("click", fetchModels);
-  els.viewReleaseBtn.addEventListener("click", openUpdateUrl);
-  els.dismissUpdateBtn.addEventListener("click", dismissUpdate);
-  els.checkUpdatesLink.addEventListener("click", (e) => {
-    e.preventDefault();
-    manualUpdateCheck();
-  });
+  if (UPDATES_ENABLED) {
+    els.viewReleaseBtn.addEventListener("click", openUpdateUrl);
+    els.dismissUpdateBtn.addEventListener("click", dismissUpdate);
+    els.checkUpdatesLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      manualUpdateCheck();
+    });
+  } else {
+    // Belt and braces: even if the static markup were reached, the update
+    // controls are not offered at all in the store build.
+    els.checkUpdatesLink.classList.add("hidden");
+  }
   els.modelsList.addEventListener("change", () => {
     activeModelInput().value = els.modelsList.value;
     if (els.autoSave.checked) saveSettings();
@@ -397,6 +425,7 @@ async function fetchModels() {
 // re-checks). Shows the banner when a newer release exists; on a manual check
 // it also reports "up to date" / errors in the status area.
 async function checkForUpdate(force) {
+  if (!UPDATES_ENABLED) return; // Mac App Store build: never ask GitHub
   let resp;
   try {
     resp = await browser.runtime.sendMessage({ type: "check-update", force: !!force });

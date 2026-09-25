@@ -307,10 +307,13 @@ node tools/test-render-markdown.mjs
    ```
 4. Commit, tag `v<version>`, push the tag.
 5. Publish a **GitHub Release** with the assets: `doxa-extension-<version>.zip`
-   and the signed `doxa-<version>-fx.xpi`. Installed copies then show the
-   "Update available" banner pointing at it.
+   and the signed `doxa-<version>-fx.xpi`. Installed Firefox copies then show the
+   "Update available" banner pointing at it (the Safari build has no update
+   checker — guideline 2.4.5(vii); see `tools/verify-no-self-update.mjs`).
 6. For an App Store update: archive with Apple Distribution and upload through
-   Xcode or Xcode Cloud, then submit the new version.
+   Xcode or Xcode Cloud, then submit the new version. Bump `version` in
+   `Comment Summarizer/Comment Summarizer Extension/Resources/manifest.json` so
+   the new extension is distinguishable in Safari → Settings → Extensions.
 
 ## Xcode Cloud
 

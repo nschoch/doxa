@@ -133,17 +133,20 @@ does not.
 > Shortcuts**. Safari also lists a row for the toolbar button ("Open Doxa") — that
 > one just opens the popup, so leave it without a key unless you want it.
 
-### Update checking
+### Update checking (Firefox builds only)
 
-Doxa checks whether a newer version exists and, if so, shows an **"Update
-available"** banner with a **View release** button that opens the release page.
-The footer shows your installed version plus a **Check for updates** link to force
-a re-check, and **×** dismisses the banner for that version.
+In the **self-hosted Firefox add-on**, Doxa checks whether a newer version exists
+and, if so, shows an **"Update available"** banner with a **View release** button
+that opens the release page. The footer shows your installed version plus a
+**Check for updates** link to force a re-check, and **×** dismisses the banner for
+that version.
 
-- **Mac App Store installs** update automatically through the App Store, so the
-  banner is informational only.
-- **Firefox installs** (self-hosted `.xpi`) can't auto-update, so attaching the
-  signed `.xpi` to each GitHub Release is what delivers the update.
+- **Mac App Store installs** have no update checker at all: the App Store
+  notifies you and installs updates, so the Safari build shows neither the banner
+  nor the **Check for updates** link. (App Store guideline 2.4.5(vii).)
+- **Firefox installs** (self-hosted `.xpi`) can't auto-update, so the banner is
+  how the add-on points you at a new release; attaching the signed `.xpi` to each
+  GitHub Release is what delivers the update.
 
 Each new version must therefore be published as a GitHub Release with a version
 tag (e.g. `v1.0.9`); pre-releases and drafts are ignored. Checks are rate-limited

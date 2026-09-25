@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Doxa",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Summarize Reddit and YouTube comments in one click. Local Ollama or your own API key.",
   "homepage_url": "https://github.com/nschoch/doxa",
   "developer": {

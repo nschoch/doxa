@@ -359,6 +359,28 @@ Local CLI signing on this machine is broken (`errSecInternalComponent` — keych
 access is GUI-only), so signing/archiving happens in the Xcode GUI or in Xcode
 Cloud, not via `xcodebuild`.
 
+### Build number: commit it, don't rely on the GUI
+
+`Archive - macOS` fails at **Prepare Build for App Store Connect** with "The
+bundle version must be higher than the previously uploaded version" whenever the
+committed `CURRENT_PROJECT_VERSION` is behind what's already in App Store
+Connect. That happened after adding `xcshareddata/xcodecloud/manifest.json`,
+which made every push to `main` start an automatic cloud archive from a project
+still pinned at build `1`.
+
+Xcode's "increment build number on archive" only rewrites the *local* pbxproj,
+and we deliberately never archive locally — so those increments were never
+committed and every cloud run reused `1`. The fix is to keep the build number
+**in git**: it is now `100`, chosen well above the highest upload (builds 16–24
+per `PROGRESS.md`) so it can't collide. Bump it in the same commit as any other
+project change when you next ship; leaving it alone is fine for non-release
+commits, since Xcode Cloud will just report a duplicate-build failure rather than
+corrupt anything.
+
+Note that pushing to `main` now triggers a cloud archive automatically (the
+manifest + shared scheme are both committed). To stop that without losing manual
+builds, turn off **CI_START_AUTO_BUILD** on the workflow.
+
 ## Gotchas learned the hard way
 
 - **Safari `window.open` from a content script is unreliable** — card source links

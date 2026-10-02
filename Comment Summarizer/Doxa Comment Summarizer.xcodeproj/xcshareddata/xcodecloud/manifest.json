@@ -1,0 +1,9 @@
+{
+  "id" : "fbd9e0a2-e0fe-496a-a9b1-462a177b7846",
+  "targets" : [
+    {
+      "id" : "31411363-F318-4FF7-AB60-D2AB2FE441EC",
+      "name" : "Comment Summarizer"
+    }
+  ]
+}

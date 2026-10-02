@@ -1,8 +1,8 @@
 # Doxa
 
-Summarize **Reddit thread comments** and **YouTube video comments** in one click.
-Click the toolbar button on a Reddit thread or a YouTube video and Doxa reads the
-comments, summarizes them, and shows a structured TL;DR in an on-page card.
+Summarize **Reddit**, **YouTube** and **Lemmy** comment threads in one click.
+Click the toolbar button on a supported page and Doxa reads the comments,
+summarizes them, and shows a structured TL;DR in an on-page card.
 
 Doxa is a front end for a language model **you** choose and control. By default it
 uses a **local Ollama** model, so nothing leaves your machine — or point it at any
@@ -107,11 +107,13 @@ does not.
 
 ## Usage
 
-1. Open a Reddit thread or a YouTube video.
+1. Open a Reddit thread, a YouTube video, or a Lemmy post.
 2. Click the **Doxa** toolbar button:
    - **Summarize comments** — summarizes the thread's comments. On **YouTube**
      this uses the **YouTube Data API** when you've added a key; otherwise it
-     falls back to auto-scroll scraping.
+     falls back to auto-scroll scraping. On **Lemmy** no key is needed: Doxa reads
+     the instance's public API (`/api/v3/comment/list`, sorted by top score) and
+     falls back to the comments already rendered on the page.
    - **Summarize with Gemini (open in tab)** — on a YouTube video, opens a fresh
      `gemini.google.com` chat and **copies the prompt** ("Summarize this video:
      <url>") to your clipboard. Paste it (⌘V) and press Send. (Gemini strips URL
@@ -168,8 +170,13 @@ to at most one GitHub API call every 6 hours per machine.
 - **LLM API key** — required for OpenRouter, optional for a custom local server.
   Distinct from the YouTube Data API key; it's the key for the summarization
   model.
-- **Sites** — checkboxes to enable **Reddit** and **YouTube**, plus a **YouTube
-  Data API key** field right under the YouTube toggle. The extension only acts on
+- **Sites** — checkboxes to enable **Reddit**, **YouTube** and **Lemmy**, plus a
+  **YouTube Data API key** field under the YouTube toggle. Under Lemmy you can
+  **Add instance** for any other Lemmy site: Doxa asks the browser to grant access
+  to that one hostname (declined = not added), and lists what you've added so you
+  can remove it again. Ten popular instances work out of the box: lemmy.world,
+  lemmy.ml, beehaw.org, lemmy.ca, lemm.ee, lemmy.nz, sh.itjustingsocial.net,
+  programming.dev, mandalore.net, gamingcommunity.net. The extension only acts on
   enabled sites (this stops Safari asking to access every website). On YouTube,
   **Summarize comments** needs a Data API key, but **Summarize with Gemini** does
   not — the Gemini button appears on any enabled YouTube video even before you add
@@ -180,12 +187,12 @@ to at most one GitHub API call every 6 hours per machine.
 - **Timeout (seconds)** — how long to wait before failing. Bump to 300–600 if a
   large local model is slow. Default 180.
 - **Max comments** — cap on comments sent (keeps requests fast).
-- **Max comments per thread (Reddit)** — how many comments each top-level Reddit
+- **Max comments per thread (Reddit & Lemmy)** — how many comments each top-level Reddit
   thread contributes (default 30), so one huge off-topic thread can't crowd out
   the rest of the discussion. Raise it to sample deeper threads; set it near
   **Max comments** to effectively disable the per-thread cap.
-- **Max reply depth (Reddit)** — how many reply levels under each top-level
-  Reddit comment to include (default: no limit). **0** = top-level comments
+- **Max reply depth (Reddit & Lemmy)** — how many reply levels under each top-level
+  comment to include (default: no limit). **0** = top-level comments
   only; combine it with the per-thread cap to keep the sample out of deep
   off-topic tangents.
 - **Auto-save settings** — persists changes as you type.

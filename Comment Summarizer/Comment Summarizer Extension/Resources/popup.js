@@ -22,6 +22,11 @@ const els = {
   youtubeApiKey: $("#youtubeApiKey"),
   siteReddit: $("#siteReddit"),
   siteYoutube: $("#siteYoutube"),
+  siteLemmy: $("#siteLemmy"),
+  lemmyAddHost: $("#lemmyAddHost"),
+  addLemmyBtn: $("#addLemmyBtn"),
+  lemmyList: $("#lemmyList"),
+  lemmyError: $("#lemmyError"),
   fetchModelsBtn: $("#fetchModelsBtn"),
   modelsList: $("#modelsList"),
   timeoutSec: $("#timeoutSec"),
@@ -55,6 +60,111 @@ const DEFAULTS = {
 const RELEASES_PAGE = "https://github.com/nschoch/doxa/releases";
 const README_URL = "https://github.com/nschoch/doxa";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1";
+
+// Instances Doxa ships in the manifest. Anything else a user adds needs an
+// on-demand host permission, because content-script injection is gated by the
+// declared matches and a runtime-typed hostname can't change them.
+const LEMMY_INSTANCES = [
+  "lemmy.world",
+  "lemmy.ml",
+  "beehaw.org",
+  "lemmy.ca",
+  "lemm.ee",
+  "lemmy.nz",
+  "sh.itjustingsocial.net",
+  "programming.dev",
+  "mandalore.net",
+  "gamingcommunity.net",
+];
+const DEFAULT_SITES = ["reddit", "youtube", "lemmy"];
+
+// User-added instances (beyond the built-in list), persisted in storage.
+let lemmyCustomInstances = [];
+
+// Normalizes whatever the user typed into a bare lowercase hostname.
+function normalizeLemmyHost(input) {
+  const raw = String(input || "").trim().toLowerCase();
+  if (!raw) return "";
+  let host = raw;
+  try {
+    host = new URL(raw.includes("://") ? raw : "https://" + raw).hostname;
+  } catch (_) {
+    return "";
+  }
+  if (!/^[a-z0-9.-]+$/.test(host)) return "";
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return "";
+  if (!host.includes(".")) return "";
+  return host;
+}
+
+function renderLemmyInstances() {
+  if (!els.lemmyList) return;
+  els.lemmyList.textContent = "";
+  for (const host of lemmyCustomInstances) {
+    const row = document.createElement("div");
+    row.className = "lemmy-instance";
+    const label = document.createElement("span");
+    label.textContent = host;
+    const rm = document.createElement("button");
+    rm.className = "ghost small";
+    rm.type = "button";
+    rm.textContent = "Remove";
+    rm.addEventListener("click", () => removeLemmyInstance(host));
+    row.appendChild(label);
+    row.appendChild(rm);
+    els.lemmyList.appendChild(row);
+  }
+}
+
+async function removeLemmyInstance(host) {
+  lemmyCustomInstances = lemmyCustomInstances.filter((h) => h !== host);
+  // The granted origin stays in the manifest-permission set; dropping it from
+  // the list stops Doxa treating that site as Lemmy. Revoking would need a
+  // second prompt and buys nothing for the user.
+  await browser.storage.local.set({ lemmyInstances: lemmyCustomInstances });
+  renderLemmyInstances();
+  refreshButtonState();
+}
+
+// Ask the browser for one extra host permission, then remember the instance.
+async function addLemmyInstance() {
+  const host = normalizeLemmyHost(els.lemmyAddHost.value);
+  if (!host) {
+    setLemmyError("Enter an instance hostname, e.g. lemmy.example.org");
+    return;
+  }
+  if (LEMMY_INSTANCES.includes(host) || lemmyCustomInstances.includes(host)) {
+    els.lemmyAddHost.value = "";
+    setLemmyError("");
+    return;
+  }
+  setLemmyError("");
+  const origin = "https://" + host + "/*";
+  let granted = false;
+  try {
+    granted = await browser.permissions.request({ origins: [origin] });
+  } catch (_) {
+    granted = false;
+  }
+  if (!granted) {
+    setLemmyError("Permission declined — Doxa can't run on " + host + ".");
+    return;
+  }
+  lemmyCustomInstances = lemmyCustomInstances.concat([host]);
+  await browser.storage.local.set({ lemmyInstances: lemmyCustomInstances });
+  // Injection on a user-added instance rides the existing activeTab grant (the
+  // manifest already covers http/https for the LLM providers), so nothing else
+  // needs registering — just refresh the button state for the current tab.
+  els.lemmyAddHost.value = "";
+  renderLemmyInstances();
+  refreshButtonState();
+}
+
+function setLemmyError(msg) {
+  if (!els.lemmyError) return;
+  els.lemmyError.textContent = msg || "";
+  els.lemmyError.classList.toggle("hidden", !msg);
+}
 
 // --- Platform gate: no third-party update UI in the Mac App Store build ---
 // App Review rejected the Mac App Store build under guideline 2.4.5(vii) ("The app
@@ -134,6 +244,25 @@ function bind() {
     saveSettings();
     refreshButtonState();
   });
+  if (els.siteLemmy) {
+    els.siteLemmy.addEventListener("change", () => {
+      saveSettings();
+      refreshButtonState();
+    });
+  }
+  if (els.addLemmyBtn) {
+    els.addLemmyBtn.addEventListener("click", () => {
+      addLemmyInstance();
+    });
+  }
+  if (els.lemmyAddHost) {
+    els.lemmyAddHost.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addLemmyInstance();
+      }
+    });
+  }
   els.redditMaxDepth.addEventListener("change", () => {
     if (els.autoSave.checked) saveSettings();
   });
@@ -208,20 +337,24 @@ function updateSecurityWarning() {
 async function refreshButtonState() {
   const hasKey = !!els.youtubeApiKey.value.trim();
   const sites = buildSites();
-  let host = "";
+  let url = "";
   try {
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    host = tabs && tabs[0] && tabs[0].url ? hostFromUrl(tabs[0].url) : "";
+    url = tabs && tabs[0] && tabs[0].url ? tabs[0].url : "";
   } catch (_) {}
+  const host = hostFromUrl(url);
 
   const isReddit = host.includes("reddit.com");
   const isYoutube = host.includes("youtube.com");
+  const isLemmy = !!detectLemmyPost(url, lemmyCustomInstances);
   // The YouTube site toggle isn't gated on a Data API key: the Gemini hand-off
   // needs no key, so a user can enable YouTube even before adding one.
   const redditOn = isReddit && sites.includes("reddit");
   // Comment/transcript summarization on YouTube still needs the Data API key.
   const youtubeOn = isYoutube && sites.includes("youtube") && hasKey;
-  const enabled = redditOn || youtubeOn;
+  // Lemmy's public API needs no key at all.
+  const lemmyOn = isLemmy && sites.includes("lemmy");
+  const enabled = redditOn || youtubeOn || lemmyOn;
 
   // "Summarize with Gemini" appears on any enabled YouTube video — it's a
   // hand-off to Gemini in a new tab and needs no Data API key.
@@ -237,9 +370,28 @@ async function refreshButtonState() {
       "info",
       "Add a YouTube Data API key in Settings to summarize comments. (The Gemini button works without a key.)",
     );
+  } else if (isLemmy && !sites.includes("lemmy")) {
+    setStatus("info", "Lemmy is disabled. Enable it under Sites above.");
   } else {
     setStatus("info", "This site is disabled in Settings.");
   }
+}
+
+// Mirrors detectLemmyPost in content.js: an allowlisted (or user-added) instance
+// plus /post/<numeric id>. Kept local so the popup never depends on the content
+// script being loaded on that tab.
+function detectLemmyPost(href, extraInstances) {
+  let u;
+  try {
+    u = new URL(href);
+  } catch (_) {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const known = Array.isArray(extraInstances) ? extraInstances : [];
+  if (!LEMMY_INSTANCES.includes(u.hostname) && !known.includes(u.hostname)) return null;
+  const m = u.pathname.match(/^\/post\/(\d+)/);
+  return m ? { origin: u.origin, instance: u.hostname, postId: m[1] } : null;
 }
 
 function hostFromUrl(url) {
@@ -268,6 +420,7 @@ async function loadSettings() {
       "maxComments",
       "redditPerThread",
       "redditMaxDepth",
+      "lemmyInstances",
     ]);
     els.provider.value = s.provider || DEFAULTS.provider;
     els.ollamaUrl.value = s.ollamaUrl || DEFAULTS.ollamaUrl;
@@ -284,9 +437,12 @@ async function loadSettings() {
     if (!s.openaiPreset && s.openrouterModel) els.openaiPreset.value = "openrouter";
     els.apiKey.value = s.apiKey || "";
     els.youtubeApiKey.value = s.youtubeApiKey || "";
-    const sites = Array.isArray(s.sites) ? s.sites : ["reddit", "youtube"];
+    const sites = Array.isArray(s.sites) ? s.sites : DEFAULT_SITES;
     els.siteReddit.checked = sites.includes("reddit");
     els.siteYoutube.checked = sites.includes("youtube");
+    if (els.siteLemmy) els.siteLemmy.checked = sites.includes("lemmy");
+    lemmyCustomInstances = Array.isArray(s.lemmyInstances) ? s.lemmyInstances.filter((h) => !LEMMY_INSTANCES.includes(h)) : [];
+    renderLemmyInstances();
     els.timeoutSec.value = s.timeoutSec || DEFAULTS.timeoutSec;
     els.maxComments.value = s.maxComments || DEFAULTS.maxComments;
     els.redditPerThread.value = s.redditPerThread || DEFAULTS.redditPerThread;
@@ -306,6 +462,9 @@ async function loadSettings() {
     els.maxComments.value = DEFAULTS.maxComments;
     els.redditPerThread.value = DEFAULTS.redditPerThread;
     els.redditMaxDepth.value = ""; // no limit
+    if (els.siteLemmy) els.siteLemmy.checked = true;
+    lemmyCustomInstances = [];
+    renderLemmyInstances();
   }
   updateVisibility();
 }
@@ -324,6 +483,7 @@ async function saveSettings() {
     timeoutSec: Number(els.timeoutSec.value) || DEFAULTS.timeoutSec,
     maxComments: Number(els.maxComments.value) || DEFAULTS.maxComments,
     redditPerThread: Number(els.redditPerThread.value) || DEFAULTS.redditPerThread,
+    lemmyInstances: lemmyCustomInstances,
   };
   // "Max reply depth": leave the key out entirely when the select is on
   // "No limit" (blank) — the extractor treats an absent value as unlimited.
@@ -347,6 +507,7 @@ function buildSites() {
   // YouTube is enabled by its checkbox alone (Gemini needs no Data API key);
   // require the key where it's actually needed — the summarize path.
   if (els.siteYoutube.checked) sites.push("youtube");
+  if (els.siteLemmy && els.siteLemmy.checked) sites.push("lemmy");
   return sites;
 }
 
@@ -493,7 +654,7 @@ function dismissUpdate() {
 
 async function doSummarize() {
   setStatus("info", "Reading comments…");
-  await sendToTab("start", "This isn't a supported page. Open a Reddit thread or a YouTube video.");
+  await sendToTab("start", "This isn't a supported page. Open a Reddit thread, a YouTube video, or a Lemmy post.");
 }
 
 // Opens Gemini (gemini.google.com) in a new tab. The prompt is copied to the

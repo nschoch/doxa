@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Doxa",
   "version": "1.1.3",
-  "description": "Summarize Reddit and YouTube comments in one click. Local Ollama or your own API key.",
+  "description": "Summarize Reddit, YouTube and Lemmy comments in one click. Local Ollama or your own API key.",
   "homepage_url": "https://github.com/nschoch/doxa",
   "developer": {
     "name": "Nick Schoch",
@@ -31,7 +31,17 @@
     "https://*/*",
     "https://openrouter.ai/*",
     "https://www.googleapis.com/*",
-    "https://api.github.com/*"
+    "https://api.github.com/*",
+    "*://lemmy.world/*",
+    "*://lemmy.ml/*",
+    "*://beehaw.org/*",
+    "*://lemmy.ca/*",
+    "*://lemm.ee/*",
+    "*://lemmy.nz/*",
+    "*://sh.itjustingsocial.net/*",
+    "*://programming.dev/*",
+    "*://mandalore.net/*",
+    "*://gamingcommunity.net/*"
   ],
   "background": {
     "scripts": [
@@ -62,7 +72,17 @@
     {
       "matches": [
         "*://*.reddit.com/*",
-        "*://*.youtube.com/*"
+        "*://*.youtube.com/*",
+        "*://lemmy.world/*",
+        "*://lemmy.ml/*",
+        "*://beehaw.org/*",
+        "*://lemmy.ca/*",
+        "*://lemm.ee/*",
+        "*://lemmy.nz/*",
+        "*://sh.itjustingsocial.net/*",
+        "*://programming.dev/*",
+        "*://mandalore.net/*",
+        "*://gamingcommunity.net/*"
       ],
       "js": [
         "content.js"

@@ -1,6 +1,6 @@
 // Content script for Doxa.
-// Injected into Reddit and YouTube pages. It:
-//   - collects loaded comments (Reddit/YouTube), auto-scrolling YouTube first,
+// Injected into Reddit, YouTube and Lemmy pages. It:
+//   - collects loaded comments (Reddit/Lemmy/YouTube), auto-scrolling YouTube first,
 //   - shows an on-page card that renders the summary as formatted Markdown,
 //   - lets the user ask a follow-up question (grounded in the same source),
 //   - proxies requests to the background worker over a long-lived port.
@@ -58,11 +58,6 @@
   }
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message && message.type === "collect") {
-      const comments = collectComments();
-      sendResponse({ ok: true, host: location.host, count: comments.length, comments });
-      return;
-    }
     if (message && message.type === "start") {
       startSummary();
       sendResponse({ ok: true });
@@ -101,12 +96,17 @@
       "maxComments",
       "redditPerThread",
       "redditMaxDepth",
+      "lemmyInstances",
     ]);
   }
 
+  // Sites Doxa knows how to summarize, in the absence of any user setting.
+  const DEFAULT_SITES = ["reddit", "youtube", "lemmy"];
+
   function isSiteEnabled(s) {
+    const sites = Array.isArray(s.sites) ? s.sites : DEFAULT_SITES;
+    if (detectLemmyPost(location.href)) return sites.includes("lemmy");
     const host = location.host;
-    const sites = Array.isArray(s.sites) ? s.sites : ["reddit", "youtube"];
     if (host.includes("reddit.com")) return sites.includes("reddit");
     if (host.includes("youtube.com")) return sites.includes("youtube");
     return false;
@@ -294,6 +294,7 @@
     const card = ensureCard();
     const s = await getSettings();
     const isYoutube = location.host.includes("youtube.com");
+    const lemmy = detectLemmyPost(location.href, s.lemmyInstances);
     if (!isSiteEnabled(s)) {
       card.status("This site isn't enabled in Settings. Enable it under Settings → Sites.", "error");
       return;
@@ -304,7 +305,31 @@
     }
 
     let comments;
-    if (isYoutube) {
+    if (lemmy) {
+      // Lemmy: prefer the instance's public API (authoritative, sorted by Top),
+      // fall back to the comments already rendered in the page.
+      card.status("Loading comments from Lemmy…", "pending");
+      let api;
+      try {
+        api = await fetchLemmyComments(
+          lemmy.postId,
+          s.redditPerThread,
+          s.redditMaxDepth,
+          s.maxComments,
+        );
+      } catch (e) {
+        api = null;
+      }
+      comments = api && api.comments.length ? api.comments : extractLemmyCommentsDom();
+      if (!comments.length) {
+        card.status(
+          (api && api.views && lemmyEmptyReason(api.counts, api.views)) ||
+            "No comments found on this Lemmy post yet.",
+          "error",
+        );
+        return;
+      }
+    } else if (isYoutube) {
       card.status("Loading comments…", "pending");
       comments = await getYoutubeComments(s, (count) =>
         card.status(
@@ -321,7 +346,7 @@
 
     if (!comments.length) {
       card.status(
-        "No comments found. On YouTube, scroll down to load comments first, then click Summarize again.",
+        "No comments found. On Reddit or Lemmy, wait for the thread to load; on YouTube, scroll down to load comments first. Then click Summarize again.",
         "error",
       );
       return;
@@ -470,6 +495,9 @@
       return extractRedditComments(redditPerThread, redditMaxDepth);
     }
     if (host.includes("youtube.com")) return extractYoutubeComments();
+    // No generic fall-through: an unrecognized page has no known comment layout,
+    // so summarizing arbitrary DOM would produce junk. Lemmy's DOM path lives in
+    // getLemmyComments, which knows its own instance.
     return [];
   }
 
@@ -643,6 +671,175 @@
       }
     }
     return out;
+  }
+
+  // --- Lemmy (federated link aggregator: lemmy.world, lemmy.ml, ...) ---
+  // Instances Doxa matches in the manifest. Users can add their own in Settings;
+  // that grants the host permission on demand rather than widening this list.
+  const LEMMY_INSTANCES = [
+    "lemmy.world",
+    "lemmy.ml",
+    "beehaw.org",
+    "lemmy.ca",
+    "lemm.ee",
+    "lemmy.nz",
+    "sh.itjustingsocial.net",
+    "programming.dev",
+    "mandalore.net",
+    "gamingcommunity.net",
+  ];
+
+  // Recognizes a Lemmy post page: https://<instance>/post/<numeric-id>[/<comment-id>]
+  // Returns { origin, instance, postId } or null. Deliberately requires a numeric
+  // id so other /post/... paths on an unrelated site never look like Lemmy.
+  function detectLemmyPost(href, extraInstances) {
+    let u;
+    try {
+      u = new URL(href);
+    } catch (_) {
+      return null;
+    }
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    const known = Array.isArray(extraInstances) ? extraInstances : [];
+    if (!LEMMY_INSTANCES.includes(u.hostname) && !known.includes(u.hostname)) return null;
+    const m = u.pathname.match(/^\/post\/(\d+)/);
+    if (!m) return null;
+    return { origin: u.origin, instance: u.hostname, postId: m[1] };
+  }
+
+  // Depth of a Lemmy comment from its `path` ("0" root prefix + dotted ancestor
+  // ids), so depth is independent of DOM nesting and of reply order.
+  function lemmyDepth(path) {
+    const segs = String(path || "").split(".").filter(Boolean);
+    return Math.max(0, segs.length - 2);
+  }
+
+  function lemmyTopLevel(path) {
+    return lemmyDepth(path) === 0;
+  }
+
+  // Grouping model mirrors capRedditByThread: threads are keyed by the root
+  // ancestor in `path`, so one long tangent can't consume the whole budget.
+  // Returns { kept, overDepth }: `kept` respects perThread (top-level comments
+  // always pass — they are the thread roots), `overDepth` counts replies skipped
+  // for exceeding maxDepth without spending any budget.
+  function capLemmyByThread(views, perThread, maxDepth) {
+    const limit = Math.max(1, parseInt(perThread, 10) || REDDIT_MAX_PER_THREAD);
+    const depthLimit = redditDepthLimit(maxDepth);
+    const perRoot = new Map();
+    const kept = [];
+    let overDepth = 0;
+    for (const v of views) {
+      const c = v && v.comment;
+      if (!c) continue;
+      const pathSegs = String(c.path || "").split(".").filter(Boolean);
+      const rootId = pathSegs.length > 1 ? pathSegs[1] : "0";
+      if (depthLimit !== null && lemmyDepth(c.path) > depthLimit) {
+        overDepth++;
+        continue;
+      }
+      if (!lemmyTopLevel(c.path)) {
+        const used = perRoot.get(rootId) || 0;
+        if (used >= limit) continue;
+        perRoot.set(rootId, used + 1);
+      }
+      kept.push(v);
+    }
+    return { kept, overDepth };
+  }
+
+  // Maps API CommentView objects into Doxa's { text, url } shape. Sorting is the
+  // server's job (we request sort=Top); here we only drop deleted/removed bodies,
+  // normalize whitespace, dedup by id then by exact text, and apply the caps.
+  function commentsFromLemmyViews(views, perThread, maxDepth) {
+    const { kept } = capLemmyByThread(views, perThread, maxDepth);
+    const byId = new Set();
+    const seen = new Set();
+    const out = [];
+    for (const v of kept) {
+      const c = v.comment;
+      if (c.deleted || c.removed) continue;
+      if (byId.has(c.id)) continue;
+      byId.add(c.id);
+      const t = String(c.content || "").replace(/\s+/g, " ").trim();
+      if (!t || t.length <= 3 || seen.has(t)) continue;
+      seen.add(t);
+      const pid = c.post_id || (v.post && v.post.id) || "";
+      out.push({ text: t, url: pid ? `${location.origin}/comment/${c.id}` : "" });
+    }
+    return out;
+  }
+
+  // A Lemmy thread looks empty when the API returns no comments but the post
+  // reports some. On federated ("local:false") posts the local instance often
+  // hasn't fetched the remote thread yet, so say that instead of "no comments".
+  // `views` is the API's comment list: non-empty means the thread was fetched
+  // fine and the caps just discarded everything, so no special reason applies.
+  function lemmyEmptyReason(counts, views) {
+    const total = Number(counts && counts.comments) || 0;
+    if (total <= 0) return "";
+    if (views && views.length) return "";
+    // No comments came back for a post that has them. When the page's instance
+    // is not this page's own host, the thread lives elsewhere and federation
+    // hasn't delivered it — the common case on lemmy.world for remote posts.
+    const local = detectLemmyPost(location.href);
+    const lagging = !!local && local.instance !== location.hostname;
+    return lagging
+      ? `Lemmy hasn't loaded this thread's ${total} comment(s) from the remote instance yet.`
+      : `This thread has ${total} comment(s), but Lemmy returned none of them.`;
+  }
+
+  // Fallback source: the comment nodes Lemmy server-rendered into the page.
+  // Reads only what is already rendered — it does not click "more replies".
+  function extractLemmyCommentsDom() {
+    const nodes = document.querySelectorAll("article.comment-node[id^='comment-']");
+    const seen = new Set();
+    const out = [];
+    for (const node of nodes) {
+      const body =
+        node.querySelector(".comment-content .md-div") || node.querySelector(".md-div") || node;
+      const t = (body.innerText || body.textContent || "").replace(/\s+/g, " ").trim();
+      if (!t || t.length <= 3 || seen.has(t)) continue;
+      seen.add(t);
+      out.push({ text: t, url: location.origin + node.id });
+    }
+    return out;
+  }
+
+  // Primary source: Lemmy's public REST API. Runs same-origin from the content
+  // script, which keeps CORS out of the way and avoids extension-origin requests
+  // that instances fronted by Cloudflare tend to challenge. Two calls because
+  // GET /api/v3/post carries no comments on 0.19.x.
+  async function fetchLemmyComments(postId, perThread, maxDepth, maxComments) {
+    const depth = redditDepthLimit(maxDepth);
+    const limit = Math.max(1, Math.min(2000, Number(maxComments) || 300));
+    const params = new URLSearchParams({
+      post_id: postId,
+      // Sort enum values are capitalized on 0.19.x; lowercase answers HTTP 400.
+      sort: "Top",
+      max_depth: depth === null ? "50" : String(depth + 1),
+      limit: String(limit),
+    });
+    const res = await fetch(`${location.origin}/api/v3/comment/list?${params}`, {
+      credentials: "omit",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error("Lemmy API responded " + res.status);
+    const data = await res.json();
+    const views = Array.isArray(data && data.comments) ? data.comments : [];
+    const comments = commentsFromLemmyViews(views, perThread, maxDepth);
+    if (comments.length) return { comments, views };
+    // The thread may genuinely be empty; ask the post for its count to tell the
+    // two cases apart. Failure here must not mask the original outcome.
+    let counts = null;
+    try {
+      const pr = await fetch(`${location.origin}/api/v3/post?id=${postId}`, {
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+      });
+      if (pr.ok) counts = (await pr.json()).post_view.counts;
+    } catch (_) {}
+    return { comments, views, counts };
   }
 
   // YouTube renders its comment components inside (open) shadow roots, which a
@@ -937,7 +1134,7 @@
     cardEl = document.createElement("div");
     cardEl.id = "cs-card";
     cardEl.innerHTML = `
-      <div class="cs-header"><span>Doxa — Reddit &amp; YouTube Summarizer</span><button class="cs-close" title="Close">×</button></div>
+      <div class="cs-header"><span>Doxa — Reddit, YouTube &amp; Lemmy Summarizer</span><button class="cs-close" title="Close">×</button></div>
       <div class="cs-body">
         <div class="cs-status pending"></div>
         <div class="cs-meta hidden"></div>

@@ -96,6 +96,23 @@
           YouTube Data API key
           <input id="youtubeApiKey" type="password" placeholder="AIza…" />
         </label>
+        <label class="check">
+          <input id="siteLemmy" type="checkbox" checked />
+          Lemmy (post pages, no API key needed)
+        </label>
+        <div class="lemmy-instances">
+          <label>
+            Add a Lemmy instance
+            <input id="lemmyAddHost" type="text" placeholder="lemmy.example.org" />
+          </label>
+          <button id="addLemmyBtn" class="ghost small">Add instance</button>
+          <div id="lemmyList"></div>
+          <p id="lemmyError" class="hint error hidden"></p>
+          <p class="hint">
+            Ten popular instances work out of the box. Adding another asks the
+            browser to grant Doxa access to that one site; remove it any time.
+          </p>
+        </div>
       </div>
 
       <label>

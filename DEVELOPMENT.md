@@ -291,8 +291,13 @@ open when a shortcut fires):
 node --check extension/content.js extension/background.js extension/popup.js
 npx web-ext lint --source-dir extension      # target: 0 errors / 0 warnings / 0 notices
 node tools/test-reddit-cap.mjs
+node tools/test-lemmy-cap.mjs
 node tools/test-render-markdown.mjs
 ```
+
+`tools/extension-card-loop.mjs --scenario=lemmy` renders a Lemmy post page in
+jsdom and proves the card appears through the DOM fallback (no network is
+stubbed there, so the API path is out of scope for that loop).
 
 `tools/` also contains diagnostics that fetch live pages and report green/red
 (e.g. `tools/diagnose-youtube.mjs`) — useful when an extractor breaks.

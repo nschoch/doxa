@@ -292,6 +292,7 @@ node --check extension/content.js extension/background.js extension/popup.js
 npx web-ext lint --source-dir extension      # target: 0 errors / 0 warnings / 0 notices
 node tools/test-reddit-cap.mjs
 node tools/test-lemmy-cap.mjs
+node tools/test-lemmy-instances-ui.mjs   # needs jsdom (npm i --no-save jsdom)
 node tools/test-render-markdown.mjs
 ```
 

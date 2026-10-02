@@ -101,16 +101,21 @@
           Lemmy (post pages, no API key needed)
         </label>
         <div class="lemmy-instances">
+          <button id="lemmyToggleBtn" class="ghost small" type="button">
+            Show included Lemmy sites
+          </button>
+          <div id="lemmyList" class="collapsed"></div>
+          <span id="lemmyCount" class="lemmy-count"></span>
           <label>
             Add a Lemmy instance
             <input id="lemmyAddHost" type="text" placeholder="lemmy.example.org" />
           </label>
           <button id="addLemmyBtn" class="ghost small">Add instance</button>
-          <div id="lemmyList"></div>
           <p id="lemmyError" class="hint error hidden"></p>
           <p class="hint">
-            Ten popular instances work out of the box. Adding another asks the
-            browser to grant Doxa access to that one site; remove it any time.
+            Doxa treats these hosts as Lemmy (a page must also be a post URL, like
+            /post/12345). Adding another asks the browser to grant Doxa access to
+            that one site; remove it any time.
           </p>
         </div>
       </div>

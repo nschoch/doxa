@@ -371,6 +371,13 @@ footer a {
 .lemmy-instances .ghost.small {
   padding: 2px 8px;
   font-size: 12px;
+  align-self: flex-start;
+}
+
+/* The instance list is collapsed by default: ten built-ins plus user-added ones
+   would otherwise dominate a small popup. */
+#lemmyList.collapsed {
+  display: none;
 }
 
 #lemmyList .lemmy-instance {
@@ -380,6 +387,21 @@ footer a {
   gap: 8px;
   font-size: 12px;
   color: var(--fg);
+}
+
+#lemmyList .lemmy-instance.builtin span:first-child {
+  color: var(--muted);
+}
+
+#lemmyList .lemmy-tag {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.lemmy-count {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 #lemmyError.error {

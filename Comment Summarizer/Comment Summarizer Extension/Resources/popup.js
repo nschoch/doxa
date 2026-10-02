@@ -26,6 +26,8 @@ const els = {
   lemmyAddHost: $("#lemmyAddHost"),
   addLemmyBtn: $("#addLemmyBtn"),
   lemmyList: $("#lemmyList"),
+  lemmyCount: $("#lemmyCount"),
+  lemmyToggleBtn: $("#lemmyToggleBtn"),
   lemmyError: $("#lemmyError"),
   fetchModelsBtn: $("#fetchModelsBtn"),
   modelsList: $("#modelsList"),
@@ -97,12 +99,27 @@ function normalizeLemmyHost(input) {
   return host;
 }
 
+// Show every instance Doxa treats as Lemmy: the built-in ones (read-only — they
+// ship in the manifest) and any the user added (removable). Rendering them all
+// here is what makes "which sites count as Lemmy?" answerable from the UI.
 function renderLemmyInstances() {
   if (!els.lemmyList) return;
   els.lemmyList.textContent = "";
+  for (const host of LEMMY_INSTANCES) {
+    const row = document.createElement("div");
+    row.className = "lemmy-instance builtin";
+    const label = document.createElement("span");
+    label.textContent = host;
+    const tag = document.createElement("span");
+    tag.className = "lemmy-tag";
+    tag.textContent = "built-in";
+    row.appendChild(label);
+    row.appendChild(tag);
+    els.lemmyList.appendChild(row);
+  }
   for (const host of lemmyCustomInstances) {
     const row = document.createElement("div");
-    row.className = "lemmy-instance";
+    row.className = "lemmy-instance added";
     const label = document.createElement("span");
     label.textContent = host;
     const rm = document.createElement("button");
@@ -113,6 +130,9 @@ function renderLemmyInstances() {
     row.appendChild(label);
     row.appendChild(rm);
     els.lemmyList.appendChild(row);
+  }
+  if (els.lemmyCount) {
+    els.lemmyCount.textContent = `${LEMMY_INSTANCES.length + lemmyCustomInstances.length} instances`;
   }
 }
 
@@ -248,6 +268,14 @@ function bind() {
     els.siteLemmy.addEventListener("change", () => {
       saveSettings();
       refreshButtonState();
+    });
+  }
+  if (els.lemmyToggleBtn) {
+    els.lemmyToggleBtn.addEventListener("click", () => {
+      const collapsed = els.lemmyList.classList.toggle("collapsed");
+      els.lemmyToggleBtn.textContent = collapsed
+        ? "Show included Lemmy sites"
+        : "Hide included Lemmy sites";
     });
   }
   if (els.addLemmyBtn) {

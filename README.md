@@ -174,7 +174,10 @@ to at most one GitHub API call every 6 hours per machine.
   **YouTube Data API key** field under the YouTube toggle. Under Lemmy you can
   **Add instance** for any other Lemmy site: Doxa asks the browser to grant access
   to that one hostname (declined = not added), and lists what you've added so you
-  can remove it again. Ten popular instances work out of the box: lemmy.world,
+  can remove it again. **Show included Lemmy sites** lists every hostname Doxa
+  treats as Lemmy — the ten built-ins plus your own. Note that being on the list
+  is only half the rule: a page must also be a post URL (`/post/<id>`), so
+  community and profile pages are ignored. Built-in instances: lemmy.world,
   lemmy.ml, beehaw.org, lemmy.ca, lemm.ee, lemmy.nz, sh.itjustingsocial.net,
   programming.dev, mandalore.net, gamingcommunity.net. The extension only acts on
   enabled sites (this stops Safari asking to access every website). On YouTube,

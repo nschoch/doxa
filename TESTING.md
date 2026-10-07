@@ -55,7 +55,9 @@ Ollama/ninfer server, or an online service like OpenRouter).
    **Ollama (local)** (set your Ollama URL + model).
 3. If you want YouTube comments, paste your **YouTube Data API key** under
    **Sites → YouTube**.
-4. **Site** toggles: make sure **Reddit** (and **YouTube**) are checked.
+4. **Site** toggles: make sure **Reddit**, **YouTube** and **Lemmy** are checked.
+   To try a Lemmy site that isn't on the built-in list, use **Add instance** — the
+   browser asks you to approve that one hostname.
 5. Settings save automatically.
 
 ## Using it
@@ -65,6 +67,14 @@ Ollama/ninfer server, or an online service like OpenRouter).
 - On a **YouTube video** → **Summarize comments** (needs a YouTube Data API key),
   or **Summarize YouTube video with Gemini** (opens Gemini in a tab; the prompt is
   on your clipboard — paste it and send).
+- On a **Lemmy post** (`https://lemmy.world/post/12345`) → **Summarize comments**.
+  No API key needed. Expected behaviours worth checking:
+  - top-voted comments lead the sample, and a long reply chain is capped by
+    "Max comments per thread" rather than crowding out the rest;
+  - a post whose thread hasn't federated in yet says so plainly instead of
+    summarizing nothing ("Lemmy hasn't loaded this thread's N comment(s)…");
+  - if the instance's API is unreachable, Doxa summarizes the comments already
+    visible on the page.
 
 ## Troubleshooting
 

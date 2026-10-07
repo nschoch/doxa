@@ -21,7 +21,8 @@ includes:
 - The model name(s) you selected.
 - Any **API keys** you enter (an OpenAI-compatible/OpenRouter key and/or a YouTube
   Data API key).
-- Which sites you enabled (Reddit, YouTube) and your comment-limit settings.
+- Which sites you enabled (Reddit, YouTube, Lemmy), any extra Lemmy instance you
+  added, and your comment-limit settings.
 
 These never leave your browser. They are not transmitted to the developer. You can
 delete them at any time by clearing the extension's data or uninstalling the app.
@@ -29,7 +30,7 @@ delete them at any time by clearing the extension's data or uninstalling the app
 ## 2. What data Doxa processes, and where it is sent
 
 Doxa reads the content **you ask it to summarize** (the comments on a Reddit
-thread, or a YouTube video's comments) and sends it to the provider you chose:
+thread, a YouTube video, or a Lemmy post) and sends it to the provider you chose:
 
 - **Local providers (Ollama, or an OpenAI-compatible server on your own machine or
   network).** The comment text is sent to that local server only and does **not**
@@ -38,6 +39,10 @@ thread, or a YouTube video's comments) and sends it to the provider you chose:
   provider, the comment text is sent to that endpoint to generate a summary. This
   is **optional** and only happens if you select such a provider and enter an API
   key. Any data sent there is governed by that provider's own privacy policy.
+- **Lemmy.** On a Lemmy post page, Doxa requests that instance's own public comment
+  API (`https://<instance>/api/v3/comment/list`) from your browser, anonymously — no
+  account, no token, no credentials are read or stored. Only the post ID you are
+  already viewing is sent, to the same site whose page you are on.
 - **YouTube Data API.** To read a YouTube video's comments, Doxa sends the video ID
   and your YouTube Data API key to Google's YouTube Data API. This is used only to
   fetch the comments you asked to summarize.
@@ -71,7 +76,8 @@ persistent storage and is cleared when you leave the page.
 - You choose whether to use a **local** provider (your data stays on your network)
   or an **online** provider.
 - You enter and can remove API keys at any time in the extension's settings.
-- You can disable summarization on Reddit and/or YouTube in the settings.
+- You can disable summarization on Reddit, YouTube and/or Lemmy in the settings,
+  and remove any Lemmy instance you added.
 
 ## 6. Children's privacy
 

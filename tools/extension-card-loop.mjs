@@ -50,10 +50,29 @@ const scenario = arg("scenario");
 
 // --- fixture: a Reddit thread page (only the card path matters; comment
 // extraction is allowed to find 0 comments and still shows the card) ---
-const FIXTURE = `<!doctype html><html><head><title>t</title></head><body>
+const IS_LEMMY = scenario === "lemmy";
+// Reddit thread page (only the card path matters; comment extraction is allowed
+// to find 0 comments and still shows the card).
+const FIXTURE_REDDIT = `<!doctype html><html><head><title>t</title></head><body>
   <shreddit-comment depth="0"><div slot="comment">first comment body</div></shreddit-comment>
   <shreddit-comment depth="0"><div slot="comment">second comment body</div></shreddit-comment>
 </body></html>`;
+// Lemmy post page: server-rendered comment nodes as lemmy-ui 0.19.x emits them.
+// The API is unreachable in this harness (no network stub), so the DOM fallback
+// is what must supply the comments.
+const FIXTURE_LEMMY = `<!doctype html><html><head><title>t</title></head><body>
+  <ul class="comments border-top border-light"><li class="comment list-unstyled">
+    <article class="details comment-node py-2" id="comment-7542164">
+      <div class="comment-content"><div class="md-div"><p>lemmy top level body</p></div></div>
+    </article>
+    <ul class="comments"><li class="comment list-unstyled">
+      <article class="details comment-node py-2" id="comment-7542165">
+        <div class="comment-content"><div class="md-div"><p>lemmy reply body</p></div></div>
+      </article>
+    </li></ul>
+  </li></ul>
+</body></html>`;
+const FIXTURE = IS_LEMMY ? FIXTURE_LEMMY : FIXTURE_REDDIT;
 
 const virtualConsole = new VirtualConsole();
 const consoleErrors = [];
@@ -61,7 +80,9 @@ virtualConsole.on("jsdomError", (e) => consoleErrors.push(String(e && e.message)
 virtualConsole.on("error", (...a) => consoleErrors.push(a.map(String).join(" ")));
 
 const dom = new JSDOM(FIXTURE, {
-  url: "https://www.reddit.com/r/example/comments/abc123/a_post/",
+  url: IS_LEMMY
+    ? "https://lemmy.world/post/11967676"
+    : "https://www.reddit.com/r/example/comments/abc123/a_post/",
   runScripts: "outside-only",
   pretendToBeVisual: true,
   virtualConsole,
@@ -90,7 +111,7 @@ const browser = {
         provider: "ollama",
         model: "llama3.1",
         maxComments: 300,
-        sites: ["reddit", "youtube"],
+        sites: ["reddit", "youtube", "lemmy"],
         timeoutSec: 60,
         redditPerThread: 20,
         redditMaxDepth: 3,

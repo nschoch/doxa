@@ -257,3 +257,6 @@ Full policy: <https://nickschoch.com/doxa/PRIVACY.html>
 Building from source, converting for Safari, signing the Firefox `.xpi`,
 notarizing, and the release process are documented in
 **[DEVELOPMENT.md](DEVELOPMENT.md)**.
+
+<!-- 2026-10-07: App Store resubmission prep — see tools/screenshots-session.md for the
+     screenshot capture script and APPSTORE.md for listing metadata. -->
